@@ -14,7 +14,7 @@
 // 먹통이 돼요.
 let db = null;
 let firebaseReady = false;
-console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix13 (헤더 겹침 수정: 배지가 실제 레이아웃 공간 차지)', 'color:#8a3fae;font-weight:bold;');
+console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix14 (마일스톤 타입별 규칙 + 등록탭 여백 + 아이콘 정리)', 'color:#8a3fae;font-weight:bold;');
 try {
   firebase.initializeApp(firebaseConfig);
   db = firebase.firestore();
@@ -223,19 +223,55 @@ function calAvatarDotsHTML(evs){
 }
 
 // 기념일로부터 정확히 100일/200일/300일... 째 되는 날짜인지 확인
+function daysSince(startStr, targetStr){
+  const start = new Date(startStr + 'T00:00:00');
+  const target = new Date(targetStr + 'T00:00:00');
+  return Math.round((target - start) / 86400000) + 1; // 한국식: 시작일이 1일째
+}
+
+// targetStr이 startStr로부터 정확히 몇 주년(=몇 년)째 되는 날인지. 아니면 0.
+function yearsSince(startStr, targetStr){
+  const start = new Date(startStr + 'T00:00:00');
+  const target = new Date(targetStr + 'T00:00:00');
+  if(target < start) return 0;
+  if(target.getMonth() === start.getMonth() && target.getDate() === start.getDate()){
+    const years = target.getFullYear() - start.getFullYear();
+    if(years > 0) return years;
+  }
+  return 0;
+}
+
+// 기념일 종류별로 다른 규칙으로 특별한 날을 찾아요:
+// - 연애: 100일 단위(100일,200일...) + 1년 단위(1년,2년...) 둘 다
+// - 결혼: 1년 단위(결혼기념일 N주년)만
+// - 탄생: 1년 단위(이름 N번째 생일)만
 function getMilestonesForDate(dateStr){
   const list = (store.room && store.room.anniversaries) || [];
-  const target = new Date(dateStr + 'T00:00:00');
   const results = [];
+
   list.forEach(a=>{
-    const start = new Date(a.date + 'T00:00:00');
-    const diffDays = Math.round((target - start) / 86400000) + 1; // 한국식: 시작일이 1일째
-    if(diffDays > 0 && diffDays % 100 === 0){
-      const meta = ANNIV_TYPES.find(t => t.key === a.type);
-      const label = (a.type === 'birth' && a.name) ? a.name : (meta ? meta.label : '');
-      results.push({ type:a.type, label, icon: meta ? meta.icon : '💯', days: diffDays });
+    if(a.type === 'dating'){
+      const days = daysSince(a.date, dateStr);
+      if(days > 0 && days % 100 === 0){
+        results.push({ icon:'💗', text:`연애 ${days}일` });
+      }
+      const years = yearsSince(a.date, dateStr);
+      if(years > 0){
+        results.push({ icon:'💗', text:`연애 ${years}년` });
+      }
+    } else if(a.type === 'marriage'){
+      const years = yearsSince(a.date, dateStr);
+      if(years > 0){
+        results.push({ icon:'💍', text:`결혼기념일 ${years}주년` });
+      }
+    } else if(a.type === 'birth'){
+      const years = yearsSince(a.date, dateStr);
+      if(years > 0){
+        results.push({ icon:'🎂', text:`${a.name || '아이'} ${years}번째 생일` });
+      }
     }
   });
+
   return results;
 }
 
@@ -279,7 +315,7 @@ function renderCalendar(){
   const milestoneHTML = selMilestones.map(m => `
     <div class="event-item milestone-item">
       <div class="icon-stack"><div class="icon-chip" style="background:#ffe1ef;">${m.icon}</div></div>
-      <div class="etxt"><div class="etitle">${m.label} ${m.days}일째 💯</div><div class="emeta">축하해요!</div></div>
+      <div class="etxt"><div class="etitle">${m.text} 🎉</div><div class="emeta">축하해요!</div></div>
     </div>`).join('');
   const selList = document.getElementById('calSelList');
   const eventsHTML = selEvents.length ? selEvents.map(eventRowHTML).join('') : '';
@@ -524,7 +560,7 @@ function renderSettingsRoomStatus(){
 const ANNIV_TYPES = [
   { key:'dating',   label:'연애',   icon:'💗' },
   { key:'marriage', label:'결혼',   icon:'💍' },
-  { key:'birth',    label:'탄생',   icon:'👶' },
+  { key:'birth',    label:'탄생',   icon:'🎂' },
 ];
 const annivRows = document.getElementById('annivRows');
 const annivHint = document.getElementById('annivHint');
@@ -546,7 +582,7 @@ ANNIV_TYPES.forEach(t=>{
 // 탄생(아기)만 몇 명이든 추가할 수 있는 목록으로 따로 렌더링
 const birthRow = document.createElement('div');
 birthRow.className = 'anniv-row anniv-birth-row';
-birthRow.innerHTML = `<div class="aicon">👶</div><div class="anniv-birth-list" id="annivBirthList"></div>`;
+birthRow.innerHTML = `<div class="aicon">🎂</div><div class="anniv-birth-list" id="annivBirthList"></div>`;
 annivRows.appendChild(birthRow);
 
 function renderBirthList(){
@@ -594,7 +630,7 @@ async function addBirthEntry(name, date){
   if(name) entry.name = name;
   try {
     await db.collection('rooms').doc(roomInfo.code).update({ anniversaries: [...current, entry] });
-    toast('아이 기념일을 추가했어요 👶');
+    toast('아이 기념일을 추가했어요 🎂');
   } catch(e){ toast('저장에 실패했어요'); console.warn('탄생 기념일 추가 실패:', e); }
 }
 
