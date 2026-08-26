@@ -14,7 +14,7 @@
 // 먹통이 돼요.
 let db = null;
 let firebaseReady = false;
-console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix14 (마일스톤 타입별 규칙 + 등록탭 여백 + 아이콘 정리)', 'color:#8a3fae;font-weight:bold;');
+console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix16 (흰색 케이크+초 커스텀 아이콘)', 'color:#8a3fae;font-weight:bold;');
 try {
   firebase.initializeApp(firebaseConfig);
   db = firebase.firestore();
@@ -250,7 +250,10 @@ function getMilestonesForDate(dateStr){
   const results = [];
 
   list.forEach(a=>{
+    const isStartDay = (a.date === dateStr);
+
     if(a.type === 'dating'){
+      // 연애: 100일 단위 + 1년 단위 둘 다
       const days = daysSince(a.date, dateStr);
       if(days > 0 && days % 100 === 0){
         results.push({ icon:'💗', text:`연애 ${days}일` });
@@ -260,14 +263,23 @@ function getMilestonesForDate(dateStr){
         results.push({ icon:'💗', text:`연애 ${years}년` });
       }
     } else if(a.type === 'marriage'){
+      // 결혼: 1년 단위만. 당일은 "하나된 날"로 특별 표기
+      if(isStartDay){
+        results.push({ icon:'💍', text:'하나된 날' });
+      }
       const years = yearsSince(a.date, dateStr);
       if(years > 0){
-        results.push({ icon:'💍', text:`결혼기념일 ${years}주년` });
+        results.push({ icon:'💍', text:`결혼 ${years}주년` });
       }
     } else if(a.type === 'birth'){
+      // 탄생: 1년 단위만. 당일은 "이름 태어난 날", 매년은 "이름 생일"
+      const name = a.name || '아이';
+      if(isStartDay){
+        results.push({ icon: CAKE_ICON_SVG, text:`${name} 태어난 날` });
+      }
       const years = yearsSince(a.date, dateStr);
       if(years > 0){
-        results.push({ icon:'🎂', text:`${a.name || '아이'} ${years}번째 생일` });
+        results.push({ icon: CAKE_ICON_SVG, text:`${name} 생일` });
       }
     }
   });
@@ -303,7 +315,8 @@ function renderCalendar(){
     c.className = 'cal-cell' + (dateStr===today?' today':'') + (dateStr===calSelectedDate?' selected':'') + (milestones.length ? ' cal-milestone':'');
     const evs = eventsByDate[dateStr] || [];
     const dots = calAvatarDotsHTML(evs);
-    const milestoneBadge = milestones.length ? `<span class="cal-milestone-badge">💯</span>` : '';
+    const milestoneIcons = [...new Set(milestones.map(m => m.icon))].slice(0, 2).join(''); // 그 날 있는 종류의 아이콘만, 중복 없이
+    const milestoneBadge = milestones.length ? `<span class="cal-milestone-badge">${milestoneIcons}</span>` : '';
     c.innerHTML = `<span class="dnum">${d}</span>${milestoneBadge}<div class="dots">${dots}</div>`;
     c.addEventListener('click', ()=>{ calSelectedDate = dateStr; renderCalendar(); });
     grid.appendChild(c);
@@ -557,10 +570,20 @@ function renderSettingsRoomStatus(){
 }
 
 /* ── 기념일 · D-day (최대 3개: 연애/결혼/탄생) ────────────────── */
+// 케이크 이모지는 기기마다 색이 다 다르고 저희가 색을 못 바꿔서, 흰색 케이크+초를
+// 직접 그린 아이콘으로 대체해요. width/height를 1em으로 줘서 이모지처럼 주변 글자
+// 크기에 맞춰 자동으로 커지고 작아져요.
+const CAKE_ICON_SVG = '<svg width="1em" height="1em" viewBox="0 0 24 24" style="vertical-align:-0.15em;" aria-hidden="true">'
+  + '<rect x="4" y="13" width="16" height="8" rx="2" fill="#ffffff" stroke="#e8d8ec" stroke-width="1.3"/>'
+  + '<rect x="4" y="9" width="16" height="5" rx="1" fill="#ffffff" stroke="#e8d8ec" stroke-width="1.3"/>'
+  + '<rect x="10.5" y="4" width="1.2" height="6" fill="#ffb6c1"/>'
+  + '<ellipse cx="11.1" cy="3" rx="1.3" ry="1.8" fill="#ffa726"/>'
+  + '</svg>';
+
 const ANNIV_TYPES = [
   { key:'dating',   label:'연애',   icon:'💗' },
   { key:'marriage', label:'결혼',   icon:'💍' },
-  { key:'birth',    label:'탄생',   icon:'🎂' },
+  { key:'birth',    label:'탄생',   icon: CAKE_ICON_SVG },
 ];
 const annivRows = document.getElementById('annivRows');
 const annivHint = document.getElementById('annivHint');
@@ -582,7 +605,7 @@ ANNIV_TYPES.forEach(t=>{
 // 탄생(아기)만 몇 명이든 추가할 수 있는 목록으로 따로 렌더링
 const birthRow = document.createElement('div');
 birthRow.className = 'anniv-row anniv-birth-row';
-birthRow.innerHTML = `<div class="aicon">🎂</div><div class="anniv-birth-list" id="annivBirthList"></div>`;
+birthRow.innerHTML = `<div class="aicon">${CAKE_ICON_SVG}</div><div class="anniv-birth-list" id="annivBirthList"></div>`;
 annivRows.appendChild(birthRow);
 
 function renderBirthList(){
