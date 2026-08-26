@@ -14,7 +14,7 @@
 // 먹통이 돼요.
 let db = null;
 let firebaseReady = false;
-console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix6 (스냅샷 도착시 buildWhoRow 재호출 + 진단로그)', 'color:#8a3fae;font-weight:bold;');
+console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix8 (기념일 3종 + 설정순 정렬)', 'color:#8a3fae;font-weight:bold;');
 try {
   firebase.initializeApp(firebaseConfig);
   db = firebase.firestore();
@@ -490,6 +490,99 @@ function renderSettingsRoomStatus(){
     inviteBtn.style.display = 'none'; // 패널이 기본으로 보이니 별도 버튼 불필요
     roomPanel.style.display = 'block'; // 기본으로 바로 보이게
   }
+  renderAnniversary();
+  updateDdayBadges();
+}
+
+/* ── 기념일 · D-day (최대 3개: 연애/결혼/탄생) ────────────────── */
+const ANNIV_TYPES = [
+  { key:'dating',   label:'연애',   icon:'💗' },
+  { key:'marriage', label:'결혼',   icon:'💍' },
+  { key:'birth',    label:'탄생',   icon:'👶' },
+];
+const annivRows = document.getElementById('annivRows');
+const annivHint = document.getElementById('annivHint');
+
+// 설정 화면의 3개 입력 줄을 미리 만들어둠 (연애/결혼/탄생 고정 순서 - 편집하기 쉬우라고)
+ANNIV_TYPES.forEach(t=>{
+  const row = document.createElement('div');
+  row.className = 'anniv-row';
+  row.innerHTML = `
+    <div class="aicon">${t.icon}</div>
+    <div class="alabel">${t.label}</div>
+    <input type="date" class="anniv-input" id="annivInput-${t.key}" disabled />
+  `;
+  annivRows.appendChild(row);
+  row.querySelector('input').addEventListener('change', (e)=> onAnnivChange(t.key, e.target.value));
+});
+
+function renderAnniversary(){
+  const roomInfo = store.getRoomInfo();
+  const connected = !!(roomInfo && store.room); // 방이 만들어진 순간부터 활성화 (파트너 입장 전이어도 OK)
+  const list = (connected && store.room.anniversaries) || [];
+
+  ANNIV_TYPES.forEach(t=>{
+    const input = document.getElementById('annivInput-' + t.key);
+    input.disabled = !connected;
+    const entry = list.find(a => a.type === t.key);
+    input.value = entry ? entry.date : '';
+  });
+
+  annivHint.textContent = connected
+    ? (list.length ? '기념일이 파트너 화면에도 똑같이 보여요. 먼저 설정한 순서로 위에서부터 표시돼요.' : '기념일을 정하면 설정을 제외한 모든 화면 상단에 D-day가 떠요.')
+    : '파트너와 연결하면 기념일을 설정할 수 있어요';
+}
+
+async function onAnnivChange(type, val){
+  const roomInfo = store.getRoomInfo();
+  if(!roomInfo || !firebaseReady) return;
+  const current = (store.room && store.room.anniversaries) || [];
+  let updated;
+  if(val){
+    const existing = current.find(a => a.type === type);
+    if(existing){
+      // 이미 있던 기념일의 날짜만 수정 -> 처음 설정했던 순서(setAt)는 그대로 유지
+      updated = current.map(a => a.type === type ? { ...a, date: val } : a);
+    } else {
+      // 새로 설정 -> 지금 이 순간을 "설정한 시각"으로 기록해서 정렬 기준으로 씀
+      updated = [...current, { type, date: val, setAt: Date.now() }];
+    }
+  } else {
+    updated = current.filter(a => a.type !== type); // 날짜 지움 -> 목록에서 제거
+  }
+  try {
+    await db.collection('rooms').doc(roomInfo.code).update({ anniversaries: updated });
+    toast(val ? '기념일을 저장했어요 💗' : '기념일을 지웠어요');
+    // Firestore 실시간 리스너가 곧 store.room을 갱신해줄 거예요 (양쪽 화면 다 동기화됨)
+  } catch(e){
+    toast('기념일 저장에 실패했어요');
+    console.warn('기념일 저장 실패:', e);
+  }
+}
+
+function formatDday(dateStr){
+  const target = new Date(dateStr + 'T00:00:00');
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  const diffDays = Math.round((today - target) / 86400000);
+  return diffDays >= 0 ? `D+${diffDays + 1}` : `D${diffDays}`; // 한국식: 시작일이 D+1
+}
+
+function updateDdayBadges(){
+  const containers = document.querySelectorAll('.dday-badges');
+  const list = (store.room && store.room.anniversaries) || [];
+  // 먼저 설정한(setAt이 이른) 순서대로 정렬 -> 그게 가장 위(첫 번째)로
+  const sorted = [...list].sort((a,b) => (a.setAt||0) - (b.setAt||0));
+
+  if(sorted.length === 0){
+    containers.forEach(c => { c.innerHTML = ''; c.classList.remove('show'); });
+    return;
+  }
+  const html = sorted.map(a=>{
+    const meta = ANNIV_TYPES.find(t => t.key === a.type);
+    return `<span class="dday-badge">${meta ? meta.icon : '💗'} ${formatDday(a.date)}</span>`;
+  }).join('');
+  containers.forEach(c => { c.innerHTML = html; c.classList.add('show'); });
 }
 
 async function leaveRoom(){
