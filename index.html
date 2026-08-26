@@ -27,12 +27,12 @@
   }
   #app{ max-width:480px; margin:0 auto; min-height:100vh; display:flex; flex-direction:column; padding-bottom:76px; position:relative; }
 
-  .app-header{ padding:calc(env(safe-area-inset-top) + 18px) 20px 14px; position:relative; }
+  .app-header{ padding:calc(env(safe-area-inset-top) + 18px) 20px 14px; display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
   .app-header h1{ font-family:'Baloo 2'; font-size:20px; margin:0; color:var(--ink); }
   .app-header .sub{ font-size:12px; color:var(--sub); margin-top:2px; }
+  .header-title{ min-width:0; }
   .dday-badges{
-    display:none; flex-direction:column; gap:4px; position:absolute;
-    top:calc(env(safe-area-inset-top) + 18px); right:20px; max-width:160px; align-items:flex-end;
+    display:none; flex-direction:column; gap:4px; flex-shrink:0; align-items:flex-end;
   }
   .dday-badges.show{ display:flex; }
   .dday-row{ display:flex; flex-direction:row; gap:4px; }
@@ -214,7 +214,7 @@
 
   <!-- ═══ 홈 ═══ -->
   <div class="tab active" id="tab-home">
-    <div class="app-header"><h1>안녕하세요 👋</h1><div class="sub" id="todayLabel"></div><div class="dday-badges"></div></div>
+    <div class="app-header"><div class="header-title"><h1>안녕하세요 👋</h1><div class="sub" id="todayLabel"></div></div><div class="dday-badges"></div></div>
 
     <div class="dday-card">
       <div class="dlabel">오늘</div>
@@ -231,7 +231,7 @@
 
   <!-- ═══ 캘린더 ═══ -->
   <div class="tab" id="tab-calendar">
-    <div class="app-header"><h1>캘린더</h1><div class="dday-badges"></div></div>
+    <div class="app-header"><div class="header-title"><h1>캘린더</h1></div><div class="dday-badges"></div></div>
     <div class="cal-nav">
       <button id="prevMonth">‹</button>
       <span class="cmonth" id="calMonthLabel">8월 2026</span>
@@ -244,7 +244,7 @@
 
   <!-- ═══ 일정 등록 ═══ -->
   <div class="tab" id="tab-add">
-    <div class="app-header"><h1>일정 등록</h1><div class="dday-badges"></div></div>
+    <div class="app-header"><div class="header-title"><h1>일정 등록</h1></div><div class="dday-badges"></div></div>
 
     <div class="field-group">
       <input class="title-input" id="titleInput" placeholder="예: 카페 데이트" />

@@ -14,7 +14,7 @@
 // 먹통이 돼요.
 let db = null;
 let firebaseReady = false;
-console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix12 (탄생 여러 명 등록 가능)', 'color:#8a3fae;font-weight:bold;');
+console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix13 (헤더 겹침 수정: 배지가 실제 레이아웃 공간 차지)', 'color:#8a3fae;font-weight:bold;');
 try {
   firebase.initializeApp(firebaseConfig);
   db = firebase.firestore();
