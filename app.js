@@ -14,7 +14,7 @@
 // 먹통이 돼요.
 let db = null;
 let firebaseReady = false;
-console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix5 (selectedWho 정리 로직 추가)', 'color:#8a3fae;font-weight:bold;');
+console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix6 (스냅샷 도착시 buildWhoRow 재호출 + 진단로그)', 'color:#8a3fae;font-weight:bold;');
 try {
   firebase.initializeApp(firebaseConfig);
   db = firebase.firestore();
@@ -311,6 +311,12 @@ function buildWhoRow(){
   // 선택 상태가 꼬여요. 그래서 매번 "지금 존재하는 멤버"만 남기고 정리해요.
   addState.selectedWho = addState.selectedWho.filter(id => memberIds.includes(id));
 
+  console.log('[buildWhoRow]', {
+    members: members.map(m=>({id:m.id, name:m.name})),
+    myRoomInfo: store.getRoomInfo(),
+    selectedWhoBeforeDefault: [...addState.selectedWho],
+  });
+
   if(members.length <= 1){
     whoSection.style.display = 'none';
     addState.selectedWho = [members[0].id];
@@ -323,6 +329,7 @@ function buildWhoRow(){
     const myId = roomInfo ? roomInfo.myId : members[0].id;
     addState.selectedWho = memberIds.includes(myId) ? [myId] : [members[0].id];
   }
+  console.log('[buildWhoRow] selectedWhoAfterDefault:', [...addState.selectedWho]);
   whoRow.innerHTML = '';
   members.forEach(m=>{
     const chip = document.createElement('div');
@@ -702,6 +709,7 @@ function connectToRoomListener(code){
     renderHome();
     if(document.getElementById('tab-calendar').classList.contains('active')) renderCalendar();
     renderSettingsRoomStatus();
+    buildWhoRow(); // 멤버 정보가 방금 도착했으니, 등록 탭의 "누구 일정" 목록도 다시 그려야 함
   }, err=>{
     console.warn('실시간 동기화 오류:', err);
     toast('실시간 동기화 중 문제가 발생했어요');
