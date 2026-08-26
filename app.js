@@ -14,7 +14,7 @@
 // 먹통이 돼요.
 let db = null;
 let firebaseReady = false;
-console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix18 (연애 시작일 = "우리가 된 날")', 'color:#8a3fae;font-weight:bold;');
+console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix19 (기간 일정 등록 + 오늘로 버튼)', 'color:#8a3fae;font-weight:bold;');
 try {
   firebase.initializeApp(firebaseConfig);
   db = firebase.firestore();
@@ -117,6 +117,32 @@ function formatCodeDisplay(code){
   return code.match(/.{1,4}/g).join('-');
 }
 
+/* ── 기간(연속) 일정 관련 헬퍼 ─────────────────────────────── */
+function isMultiDay(ev){ return !!ev.endDate && ev.endDate !== ev.date; }
+
+function fmtEventDateRange(ev){
+  return isMultiDay(ev) ? `${fmtDateLabel(ev.date)} ~ ${fmtDateLabel(ev.endDate)}` : fmtDateLabel(ev.date);
+}
+
+// startStr~endStr 사이 모든 날짜를 'YYYY-MM-DD' 배열로. 너무 긴 기간(1년+) 실수 방지용 상한.
+function datesInRange(startStr, endStr){
+  const dates = [];
+  let cur = new Date(startStr + 'T00:00:00');
+  const end = new Date(endStr + 'T00:00:00');
+  let guard = 0;
+  while(cur <= end && guard < 366){
+    dates.push(`${cur.getFullYear()}-${pad(cur.getMonth()+1)}-${pad(cur.getDate())}`);
+    cur.setDate(cur.getDate() + 1);
+    guard++;
+  }
+  return dates;
+}
+
+function eventCoversDate(ev, dateStr){
+  const end = ev.endDate || ev.date;
+  return ev.date <= dateStr && dateStr <= end;
+}
+
 /* ── 탭 전환 ───────────────────────────────────────────────── */
 const tabs = document.querySelectorAll('.tab');
 const tabBtns = document.querySelectorAll('.tabbtn');
@@ -158,7 +184,7 @@ function eventRowHTML(ev){
       </div>
       <div class="etxt">
         <div class="etitle">${ev.title}</div>
-        <div class="emeta">${fmtDateLabel(ev.date)} · ${ev.time}</div>
+        <div class="emeta">${fmtEventDateRange(ev)} · ${ev.time}</div>
       </div>
       <button class="edel" data-id="${ev.id}">✕</button>
     </div>`;
@@ -184,7 +210,7 @@ function renderHome(){
   document.getElementById('homeCount').textContent = `등록된 일정 ${store.events.length}개`;
 
   const today = todayStr();
-  const todays = store.events.filter(e => e.date === today).sort((a,b)=>a.time.localeCompare(b.time));
+  const todays = store.events.filter(e => eventCoversDate(e, today)).sort((a,b)=>a.time.localeCompare(b.time));
   const upcoming = store.events.filter(e => e.date > today).sort((a,b)=> a.date===b.date ? a.time.localeCompare(b.time) : a.date.localeCompare(b.date)).slice(0,5);
 
   const todayList = document.getElementById('todayList');
@@ -304,7 +330,10 @@ function renderCalendar(){
   const today = todayStr();
 
   const eventsByDate = {};
-  store.events.forEach(e=>{ (eventsByDate[e.date] ||= []).push(e); });
+  store.events.forEach(e=>{
+    const end = e.endDate || e.date;
+    datesInRange(e.date, end).forEach(d => { (eventsByDate[d] ||= []).push(e); });
+  });
 
   for(let i=0; i<firstDay; i++){
     const c = document.createElement('div'); c.className='cal-cell other';
@@ -344,6 +373,13 @@ document.getElementById('prevMonth').addEventListener('click', ()=>{
 });
 document.getElementById('nextMonth').addEventListener('click', ()=>{
   calMonth++; if(calMonth>11){ calMonth=0; calYear++; } renderCalendar();
+});
+document.getElementById('todayBtn').addEventListener('click', ()=>{
+  const now = new Date();
+  calYear = now.getFullYear();
+  calMonth = now.getMonth();
+  calSelectedDate = todayStr();
+  renderCalendar();
 });
 
 /* ── 일정 등록 탭 ──────────────────────────────────────────── */
@@ -428,6 +464,20 @@ function buildWhoRow(){
 buildWhoRow();
 
 document.getElementById('dateInput').value = todayStr();
+document.getElementById('startDateInput').value = todayStr();
+document.getElementById('endDateInput').value = todayStr();
+
+// 기간(연속 일정) 토글
+let periodMode = false;
+const periodSwitch = document.getElementById('periodSwitch');
+const singleDateRow = document.getElementById('singleDateRow');
+const periodDateRow = document.getElementById('periodDateRow');
+periodSwitch.addEventListener('click', ()=>{
+  periodMode = !periodMode;
+  periodSwitch.classList.toggle('on', periodMode);
+  singleDateRow.style.display = periodMode ? 'none' : 'flex';
+  periodDateRow.style.display = periodMode ? 'flex' : 'none';
+});
 
 const titleInput = document.getElementById('titleInput');
 const saveBtn = document.getElementById('saveBtn');
@@ -438,17 +488,31 @@ titleInput.addEventListener('input', ()=>{
 saveBtn.addEventListener('click', async ()=>{
   const title = titleInput.value.trim();
   if(!title) return;
-  store.events.push({
+
+  let date, endDate;
+  if(periodMode){
+    date = document.getElementById('startDateInput').value || todayStr();
+    endDate = document.getElementById('endDateInput').value || date;
+    if(endDate < date){ toast('종료일이 시작일보다 빠를 수 없어요'); return; }
+  } else {
+    date = document.getElementById('dateInput').value || todayStr();
+    endDate = date;
+  }
+
+  const newEvent = {
     id: 'ev_' + Date.now(),
     title,
     icon: addState.icon,
     catKey: addState.cat.key,
     catColor: addState.cat.color,
     who: [...addState.selectedWho],
-    date: document.getElementById('dateInput').value || todayStr(),
+    date,
     time: document.getElementById('timeInput').value || '00:00',
     memo: document.getElementById('memoInput').value.trim(),
-  });
+  };
+  if(endDate !== date) newEvent.endDate = endDate; // 하루짜리 일정은 예전이랑 구조 그대로 유지
+
+  store.events.push(newEvent);
   await store.save();
 
   titleInput.value = '';
@@ -456,6 +520,10 @@ saveBtn.addEventListener('click', async ()=>{
   saveBtn.classList.remove('ready');
   addState.selectedWho = []; // 다음 등록 때 다시 기본값(나만)으로
   buildWhoRow();
+  periodMode = false;
+  periodSwitch.classList.remove('on');
+  singleDateRow.style.display = 'flex';
+  periodDateRow.style.display = 'none';
 
   toast('일정을 저장했어요 🎉');
   showTab('home');
