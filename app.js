@@ -14,7 +14,7 @@
 // 먹통이 돼요.
 let db = null;
 let firebaseReady = false;
-console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix19 (기간 일정 등록 + 오늘로 버튼)', 'color:#8a3fae;font-weight:bold;');
+console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix20 (캘린더 날짜 -> 등록 탭 바로가기)', 'color:#8a3fae;font-weight:bold;');
 try {
   firebase.initializeApp(firebaseConfig);
   db = firebase.firestore();
@@ -380,6 +380,18 @@ document.getElementById('todayBtn').addEventListener('click', ()=>{
   calMonth = now.getMonth();
   calSelectedDate = todayStr();
   renderCalendar();
+});
+
+document.getElementById('calAddBtn').addEventListener('click', ()=>{
+  const targetDate = calSelectedDate;
+  showTab('add');
+  // 혹시 기간 모드가 켜져 있었으면 단일 날짜 모드로 되돌리고 그 날짜를 채워넣어요
+  periodMode = false;
+  document.getElementById('periodSwitch').classList.remove('on');
+  document.getElementById('singleDateRow').style.display = 'flex';
+  document.getElementById('periodDateRow').style.display = 'none';
+  document.getElementById('dateInput').value = targetDate;
+  document.getElementById('titleInput').focus();
 });
 
 /* ── 일정 등록 탭 ──────────────────────────────────────────── */

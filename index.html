@@ -53,6 +53,11 @@
   .dday-card .ddate{ font-size:11px; opacity:.8; font-weight:700; }
 
   .section-title{ font-size:13px; font-weight:800; color:var(--sub); margin:18px 0 10px; padding:0 2px; }
+  .cal-sel-header{ display:flex; align-items:center; justify-content:space-between; margin:18px 0 10px; }
+  .cal-add-btn{
+    border:none; background:var(--accent); color:#fff; font-size:11px; font-weight:800;
+    padding:6px 12px; border-radius:999px; cursor:pointer; box-shadow:0 4px 10px rgba(138,63,174,.28); flex-shrink:0;
+  }
 
   .event-item{
     display:flex; align-items:center; gap:12px; background:var(--card); border-radius:16px;
@@ -253,7 +258,10 @@
       <button id="nextMonth">›</button>
     </div>
     <div class="cal-grid" id="calGrid"></div>
-    <div class="section-title" id="calSelLabel">선택한 날짜 일정</div>
+    <div class="cal-sel-header">
+      <div class="section-title" id="calSelLabel" style="margin:0;">선택한 날짜 일정</div>
+      <button class="cal-add-btn" id="calAddBtn">+ 일정 추가</button>
+    </div>
     <div id="calSelList"></div>
   </div>
 
