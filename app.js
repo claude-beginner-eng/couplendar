@@ -6,8 +6,21 @@
    - 연결 모드(초대코드로 연결된 후): Firestore (파트너와 실시간 공유)
    ============================================================ */
 
-firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
+// ⚠️ Firebase 초기화는 실패할 수 있어요 (예: firebase-config.js에 아직
+// 본인 키를 안 채웠거나, 파일 경로가 틀렸거나, 네트워크 문제 등).
+// 여기서 에러가 나도 앱의 나머지 기능(탭 이동, 로컬 캘린더)은 계속
+// 동작하도록 try/catch로 감싸뒀어요. 이게 없으면 이 줄에서 에러가 나는
+// 순간 이 파일의 나머지 코드가 통째로 실행 안 되고, 화면의 모든 버튼이
+// 먹통이 돼요.
+let db = null;
+let firebaseReady = false;
+try {
+  firebase.initializeApp(firebaseConfig);
+  db = firebase.firestore();
+  firebaseReady = true;
+} catch(e){
+  console.error('Firebase 초기화 실패 — firebase-config.js 내용을 확인해주세요:', e);
+}
 
 const LOCAL_KEY = 'coupleCalendarData';
 const ROOM_KEY  = 'coupleCalendarRoom'; // { code, myId }
@@ -271,6 +284,12 @@ const roomStatusText = document.getElementById('roomStatusText');
 const inviteCard  = document.getElementById('inviteCard');
 
 function renderSettingsRoomStatus(){
+  if(!firebaseReady){
+    roomStatusText.innerHTML = '⚠️ <b>파트너 초대 기능이 아직 연결 안 됐어요.</b><br/>firebase-config.js에 본인 Firebase 키를 넣고, Firestore 규칙을 게시했는지 확인해주세요.';
+    inviteBtn.style.display = 'none';
+    return;
+  }
+  inviteBtn.style.display = '';
   const roomInfo = store.getRoomInfo();
   if(roomInfo && store.room){
     const members = store.room.members || [];
@@ -334,6 +353,7 @@ async function createRoom(password){
 }
 
 document.getElementById('createRoomBtn').addEventListener('click', async ()=>{
+  if(!firebaseReady){ toast('아직 Firebase 연동이 안 됐어요. firebase-config.js를 확인해주세요'); return; }
   const pwInput = document.getElementById('roomPwInput');
   const pw = pwInput.value.trim();
   const btn = document.getElementById('createRoomBtn');
@@ -358,6 +378,7 @@ document.getElementById('createRoomBtn').addEventListener('click', async ()=>{
 // 코드 입력하기(join)
 let joinAttempts = 0;
 document.getElementById('joinRoomBtn').addEventListener('click', async ()=>{
+  if(!firebaseReady){ toast('아직 Firebase 연동이 안 됐어요. firebase-config.js를 확인해주세요'); return; }
   const codeRaw = document.getElementById('joinCodeInput').value.trim();
   const code = codeRaw.replace(/-/g, ''); // 대시(-) 넣어서 입력해도 자동으로 제거
   const pw = document.getElementById('joinPwInput').value.trim();
@@ -412,6 +433,7 @@ document.getElementById('joinRoomBtn').addEventListener('click', async ()=>{
 
 /* ── Firestore 실시간 동기화 ───────────────────────────────── */
 function connectToRoomListener(code){
+  if(!firebaseReady){ store.loadLocal(); renderHome(); return; }
   if(roomUnsub) roomUnsub();
   roomUnsub = db.collection('rooms').doc(code).onSnapshot(doc=>{
     if(!doc.exists){

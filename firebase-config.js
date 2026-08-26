@@ -10,14 +10,6 @@
 // 진짜 보안은 Firestore 쪽 "규칙(rules)"에서 관리해요.
 // ------------------------------------------------------------
 
-// Import the functions you need from the SDKs you need
-import { initializeApp } from "firebase/app";
-import { getAnalytics } from "firebase/analytics";
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
-
-// Your web app's Firebase configuration
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
   apiKey: "AIzaSyBvVzwLmWqAkKwYMkDuB-qj1slMkw0ukEI",
   authDomain: "couplendar-cae52.firebaseapp.com",
@@ -27,7 +19,3 @@ const firebaseConfig = {
   appId: "1:29564185190:web:a22c956f86d947ecd8dba7",
   measurementId: "G-JZY1T5D1HV"
 };
-
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
