@@ -18,12 +18,15 @@ try {
   firebase.initializeApp(firebaseConfig);
   db = firebase.firestore();
 
-  // ⚠️ Firestore가 일부 네트워크/브라우저 환경에서 데이터 전송 방식을
-  // "long-polling"으로 자동 전환할 때, 한글이나 이모지가 포함된 데이터를
-  // 보내면 "Failed to execute 'setRequestHeader' ... non ISO-8859-1"
-  // 에러가 나는 알려진 이슈가 있어요. 아래 설정으로 그 방식을 올바르게
-  // 자동 감지하도록 해서 이 문제를 피해요. (Firebase 공식 권장 설정)
-  db.settings({ experimentalAutoDetectLongPolling: true });
+  // ⚠️ Firestore가 일부 네트워크/브라우저/프록시 환경에서 데이터 전송 방식을
+  // 잘못 골라, 한글이나 이모지가 포함된 데이터를 보낼 때
+  // "Failed to execute 'setRequestHeader' ... non ISO-8859-1" 에러가 나는
+  // 알려진 이슈가 있어요. long-polling 방식을 강제로 지정해서 이 문제를
+  // 피해요. (auto-detect보다 강제 지정이 더 확실하게 동작해요)
+  db.settings({
+    experimentalForceLongPolling: true,
+    useFetchStreams: false,
+  });
 
   firebaseReady = true;
 } catch(e){
