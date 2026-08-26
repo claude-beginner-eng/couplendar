@@ -379,12 +379,30 @@ function renderSettingsRoomStatus(){
   const roomInfo = store.getRoomInfo();
   if(roomInfo && store.room){
     const members = store.room.members || [];
-    const names = members.map(m => m.name).join(', ');
-    roomStatusText.innerHTML = `🎉 <b>연결됨</b> — 함께 쓰는 중: ${names}`;
-    inviteBtn.style.display = '';
-    inviteBtn.textContent = '연결 해제하기';
-    inviteBtn.onclick = leaveRoom;
-    roomPanel.style.display = 'none'; // 연결됐으면 코드 만들기/입력 패널은 필요 없음
+
+    if(members.length >= 2){
+      // 완전히 연결됨 (파트너까지 들어옴)
+      const names = members.map(m => m.name).join(', ');
+      roomStatusText.innerHTML = `🎉 <b>연결됨</b> — 함께 쓰는 중: ${names}`;
+      inviteBtn.style.display = '';
+      inviteBtn.textContent = '연결 해제하기';
+      inviteBtn.onclick = leaveRoom;
+      roomPanel.style.display = 'none';
+    } else {
+      // 코드는 만들었지만 아직 파트너가 안 들어온 "대기 중" 상태
+      // -> 코드/비밀번호를 계속 보여줘야 해요, 여기서 숨기면 안 됨
+      roomStatusText.innerHTML = '⏳ <b>파트너를 기다리는 중</b> — 아래 코드와 비밀번호를 전달해주세요.';
+      inviteBtn.style.display = '';
+      inviteBtn.textContent = '취소하고 연결 해제하기';
+      inviteBtn.onclick = leaveRoom;
+
+      roomPanel.style.display = 'block';
+      document.querySelectorAll('.rtab').forEach(t => t.classList.toggle('active', t.dataset.rtab === 'create'));
+      document.getElementById('rpane-create').style.display = 'block';
+      document.getElementById('rpane-join').style.display = 'none';
+      document.getElementById('roomCodeBox').style.display = 'block';
+      document.getElementById('roomCode').textContent = formatCodeDisplay(roomInfo.code);
+    }
   } else {
     roomStatusText.textContent = '아래에서 코드를 만들거나 입력해서 파트너와 연결해보세요.';
     inviteBtn.style.display = 'none'; // 패널이 기본으로 보이니 별도 버튼 불필요
@@ -550,7 +568,6 @@ document.getElementById('joinRoomBtn').addEventListener('click', async ()=>{
     store.setRoomInfo({ code, myId });
     toast('연결됐어요! 🎉');
     connectToRoomListener(code);
-    roomPanel.style.display = 'none';
   } catch(e){
     errEl.textContent = '연결 중 문제가 발생했어요. 인터넷 연결을 확인해주세요';
     console.error(e);
