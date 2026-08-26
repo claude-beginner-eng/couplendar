@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>우리 캘린더</title>
+
+<!-- PWA 필수 태그: 이게 있어야 "홈 화면에 추가"가 진짜 앱처럼 동작해요 -->
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#8a3fae" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="우리 캘린더" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Nanum+Gothic:wght@400;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#2b1f3d; --sub:#8a7ba3; --bg:#fff6f1; --card:#ffffff; --accent:#8a3fae;
+    --date:#ff6b9d; --anniv:#9b6bff; --appt:#38bdf8; --trip:#2dd4bf;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;height:100%;}
+  body{
+    font-family:'Nanum Gothic',sans-serif; background:var(--bg); color:var(--ink);
+    overscroll-behavior:none; -webkit-font-smoothing:antialiased;
+  }
+  #app{ max-width:480px; margin:0 auto; min-height:100vh; display:flex; flex-direction:column; padding-bottom:76px; position:relative; }
+
+  /* ── 상단 헤더 ── */
+  .app-header{ padding:calc(env(safe-area-inset-top) + 18px) 20px 14px; }
+  .app-header h1{ font-family:'Baloo 2'; font-size:20px; margin:0; color:var(--ink); }
+  .app-header .sub{ font-size:12px; color:var(--sub); margin-top:2px; }
+
+  /* ── 탭 컨텐츠 ── */
+  .tab{ display:none; flex:1; padding:0 20px 20px; }
+  .tab.active{ display:block; }
+
+  /* ── 홈: D-day + 오늘/다가오는 일정 ── */
+  .dday-card{
+    background:linear-gradient(135deg, #ffd9c7, #f2b9d4); border-radius:20px; padding:20px;
+    color:#5a2a4a; margin-bottom:18px; box-shadow:0 8px 20px rgba(230,160,190,.35);
+  }
+  .dday-card .dlabel{ font-size:11px; font-weight:800; opacity:.75; }
+  .dday-card .dvalue{ font-family:'Baloo 2'; font-size:26px; font-weight:800; margin:4px 0 2px; }
+  .dday-card .ddate{ font-size:11px; opacity:.8; font-weight:700; }
+
+  .section-title{ font-size:13px; font-weight:800; color:var(--sub); margin:18px 0 10px; padding:0 2px; }
+
+  .event-item{
+    display:flex; align-items:center; gap:12px; background:var(--card); border-radius:16px;
+    padding:12px 14px; margin-bottom:8px; box-shadow:0 3px 10px rgba(180,140,190,.1);
+  }
+  .event-item .icon-chip{
+    width:36px; height:36px; border-radius:12px; display:flex; align-items:center; justify-content:center;
+    font-size:18px; flex-shrink:0; box-shadow:0 3px 8px rgba(0,0,0,.12);
+  }
+  .event-item .etxt{ flex:1; min-width:0; }
+  .event-item .etitle{ font-size:13.5px; font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .event-item .emeta{ font-size:11px; color:var(--sub); font-weight:700; margin-top:2px; }
+  .event-item .edel{ border:none; background:none; color:#d8c3e0; font-size:16px; cursor:pointer; padding:6px; }
+
+  .empty-state{ text-align:center; padding:30px 10px; color:var(--sub); font-size:12.5px; line-height:1.7; }
+
+  /* ── 캘린더 탭 ── */
+  .cal-nav{ display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+  .cal-nav button{ border:none; background:var(--card); width:34px; height:34px; border-radius:50%; font-size:14px; color:var(--accent); box-shadow:0 3px 8px rgba(180,140,190,.14); cursor:pointer; }
+  .cal-nav .cmonth{ font-family:'Baloo 2'; font-size:16px; font-weight:700; }
+  .cal-grid{ display:grid; grid-template-columns:repeat(7,1fr); gap:4px; background:var(--card); border-radius:18px; padding:14px; box-shadow:0 4px 14px rgba(180,140,190,.12); margin-bottom:16px; }
+  .cal-dow{ text-align:center; font-size:10px; font-weight:800; color:var(--sub); padding-bottom:4px; }
+  .cal-cell{ position:relative; height:44px; border-radius:10px; display:flex; flex-direction:column; align-items:center; padding-top:4px; cursor:pointer; }
+  .cal-cell.other{ opacity:.25; }
+  .cal-cell .dnum{ font-family:'Baloo 2'; font-size:12px; font-weight:700; }
+  .cal-cell.today{ background:#fbf0fb; }
+  .cal-cell.today .dnum{ color:var(--accent); font-weight:800; }
+  .cal-cell.selected{ box-shadow:0 0 0 1.6px var(--accent) inset; }
+  .cal-cell .dots{ display:flex; gap:2px; margin-top:3px; }
+  .cal-cell .dot{ width:5px; height:5px; border-radius:50%; }
+
+  /* ── 일정 등록 탭 ── */
+  .field-group{ display:flex; flex-direction:column; gap:8px; margin-bottom:16px; }
+  .field-label{ font-size:11.5px; font-weight:800; color:var(--sub); padding:0 2px; }
+  .title-input{
+    width:100%; border:none; border-radius:14px; background:var(--card); padding:13px 14px;
+    font-size:14px; font-family:'Nanum Gothic'; font-weight:700; color:var(--ink);
+    box-shadow:0 3px 10px rgba(180,140,190,.12); outline:none;
+  }
+  .icon-picker{ display:grid; grid-template-columns:repeat(6,1fr); gap:8px; background:var(--card); border-radius:14px; padding:12px; box-shadow:0 3px 10px rgba(180,140,190,.12); }
+  .icon-opt{ aspect-ratio:1/1; border-radius:11px; border:none; background:#faf3f8; font-size:17px; display:flex; align-items:center; justify-content:center; cursor:pointer; }
+  .icon-opt.active{ background:var(--accent); box-shadow:0 4px 10px rgba(138,63,174,.35); }
+  .cat-row{ display:flex; gap:8px; }
+  .cat-chip{ flex:1; display:flex; flex-direction:column; align-items:center; gap:5px; padding:10px 4px; border-radius:14px; background:var(--card); border:2px solid transparent; cursor:pointer; box-shadow:0 3px 10px rgba(180,140,190,.1); }
+  .cat-chip .dot{ width:16px; height:16px; border-radius:50%; }
+  .cat-chip span{ font-size:10.5px; font-weight:800; color:var(--sub); }
+  .cat-chip.active{ border-color:var(--cc); }
+  .cat-chip.active span{ color:var(--ink); }
+  .row2{ display:flex; gap:8px; }
+  .field{ flex:1; background:var(--card); border-radius:14px; padding:11px 13px; box-shadow:0 3px 10px rgba(180,140,190,.12); display:flex; flex-direction:column; gap:3px; }
+  .field .flabel{ font-size:9.5px; font-weight:800; color:var(--sub); }
+  .field input[type="date"], .field input[type="time"]{ border:none; background:transparent; font-family:'Nanum Gothic'; font-weight:800; font-size:13px; color:var(--ink); outline:none; padding:0; width:100%; }
+  textarea.memo{ width:100%; min-height:60px; border:none; border-radius:14px; background:var(--card); padding:12px 13px; font-family:'Nanum Gothic'; font-size:12.5px; font-weight:700; color:var(--ink); box-shadow:0 3px 10px rgba(180,140,190,.12); outline:none; resize:none; }
+  .save-btn{ width:100%; border:none; border-radius:16px; padding:14px; font-family:'Baloo 2'; font-size:15px; font-weight:700; background:#e7dcf0; color:#b3a3c8; cursor:pointer; transition:.2s; }
+  .save-btn.ready{ background:var(--accent); color:#fff; box-shadow:0 8px 20px rgba(138,63,174,.32); }
+
+  /* ── 설정 탭 ── */
+  .profile-card{ background:var(--card); border-radius:18px; padding:16px; box-shadow:0 4px 14px rgba(180,140,190,.14); display:flex; align-items:center; gap:14px; margin-bottom:14px; }
+  .avatar-big{ width:52px; height:52px; border-radius:50%; background:#faf3f8; display:flex; align-items:center; justify-content:center; font-size:26px; flex-shrink:0; }
+  .name-input{ border:none; border-bottom:2px solid #f1e4ee; background:transparent; font-family:'Baloo 2'; font-size:15px; font-weight:700; color:var(--ink); padding:2px 0 4px; outline:none; width:100%; }
+  .invite-card{ background:#fbf3ff; border-radius:16px; padding:16px; text-align:center; margin-bottom:14px; }
+  .invite-card p{ font-size:11.5px; color:var(--accent); font-weight:700; line-height:1.6; margin:0 0 10px; }
+  .invite-btn{ border:none; background:var(--accent); color:#fff; font-size:12.5px; font-weight:800; padding:10px 18px; border-radius:12px; cursor:pointer; }
+  .install-tip{ font-size:11px; color:var(--sub); line-height:1.7; background:var(--card); border-radius:14px; padding:14px; box-shadow:0 3px 10px rgba(180,140,190,.1); }
+
+  /* ── 하단 탭바 ── */
+  .tabbar{
+    position:fixed; bottom:0; left:50%; transform:translateX(-50%); width:100%; max-width:480px;
+    background:rgba(255,246,241,.92); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+    border-top:1px solid #f1e4ee; display:flex; padding:8px 6px calc(env(safe-area-inset-bottom) + 8px);
+  }
+  .tabbtn{ flex:1; border:none; background:none; display:flex; flex-direction:column; align-items:center; gap:3px; padding:6px 2px; cursor:pointer; color:var(--sub); }
+  .tabbtn .ic{ font-size:19px; }
+  .tabbtn .lb{ font-size:9.5px; font-weight:800; }
+  .tabbtn.active{ color:var(--accent); }
+
+  .toast{
+    position:fixed; bottom:90px; left:50%; transform:translateX(-50%) translateY(20px); opacity:0;
+    background:#2b1f3d; color:#fff; font-size:12px; font-weight:700; padding:10px 18px; border-radius:999px;
+    transition:.25s; pointer-events:none; z-index:50;
+  }
+  .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ═══ 홈 ═══ -->
+  <div class="tab active" id="tab-home">
+    <div class="app-header"><h1>안녕하세요 👋</h1><div class="sub" id="todayLabel"></div></div>
+
+    <div class="dday-card">
+      <div class="dlabel">오늘</div>
+      <div class="dvalue" id="homeDate">8월 26일</div>
+      <div class="ddate" id="homeCount">등록된 일정 0개</div>
+    </div>
+
+    <div class="section-title">오늘 일정</div>
+    <div id="todayList"></div>
+
+    <div class="section-title">다가오는 일정</div>
+    <div id="upcomingList"></div>
+  </div>
+
+  <!-- ═══ 캘린더 ═══ -->
+  <div class="tab" id="tab-calendar">
+    <div class="app-header"><h1>캘린더</h1></div>
+    <div class="cal-nav">
+      <button id="prevMonth">‹</button>
+      <span class="cmonth" id="calMonthLabel">8월 2026</span>
+      <button id="nextMonth">›</button>
+    </div>
+    <div class="cal-grid" id="calGrid"></div>
+    <div class="section-title" id="calSelLabel">선택한 날짜 일정</div>
+    <div id="calSelList"></div>
+  </div>
+
+  <!-- ═══ 일정 등록 ═══ -->
+  <div class="tab" id="tab-add">
+    <div class="app-header"><h1>일정 등록</h1></div>
+
+    <div class="field-group">
+      <input class="title-input" id="titleInput" placeholder="예: 카페 데이트" />
+    </div>
+
+    <div class="field-group">
+      <div class="field-label">아이콘</div>
+      <div class="icon-picker" id="iconPicker"></div>
+    </div>
+
+    <div class="field-group">
+      <div class="field-label">카테고리</div>
+      <div class="cat-row" id="catRow"></div>
+    </div>
+
+    <div class="field-group">
+      <div class="row2">
+        <div class="field"><span class="flabel">날짜</span><input type="date" id="dateInput" /></div>
+        <div class="field"><span class="flabel">시간</span><input type="time" id="timeInput" value="19:00" /></div>
+      </div>
+    </div>
+
+    <div class="field-group">
+      <div class="field-label">메모</div>
+      <textarea class="memo" id="memoInput" placeholder="장소, 준비물 등 자유롭게"></textarea>
+    </div>
+
+    <button class="save-btn" id="saveBtn">일정 저장하기</button>
+  </div>
+
+  <!-- ═══ 설정 ═══ -->
+  <div class="tab" id="tab-settings">
+    <div class="app-header"><h1>설정</h1></div>
+
+    <div class="profile-card">
+      <div class="avatar-big" id="myAvatar">🐻</div>
+      <input class="name-input" id="myName" value="나" maxlength="8" />
+    </div>
+
+    <div class="invite-card">
+      <p>아직 혼자 쓰는 중이에요. 파트너를 초대하면 그 순간부터 함께 쓰는 모드가 열려요.</p>
+      <button class="invite-btn" id="inviteBtn">파트너 초대하기</button>
+    </div>
+
+    <div class="install-tip">
+      📲 <b>홈 화면에 추가하기</b><br/>
+      아이폰 Safari 하단의 공유 버튼(⬆️)을 누르고 "홈 화면에 추가"를 선택하면, 이 페이지가 진짜 앱처럼 아이콘으로 생겨요.
+    </div>
+  </div>
+
+  <!-- ═══ 하단 탭바 ═══ -->
+  <div class="tabbar">
+    <button class="tabbtn active" data-tab="home"><span class="ic">🏠</span><span class="lb">홈</span></button>
+    <button class="tabbtn" data-tab="calendar"><span class="ic">📅</span><span class="lb">캘린더</span></button>
+    <button class="tabbtn" data-tab="add"><span class="ic">➕</span><span class="lb">등록</span></button>
+    <button class="tabbtn" data-tab="settings"><span class="ic">⚙️</span><span class="lb">설정</span></button>
+  </div>
+
+  <div class="toast" id="toast"></div>
+</div>
+
+<script>
+/* ============================================================
+   우리 캘린더 - 앱 로직
+   (미리보기에서 바로 동작하도록 app.js 내용을 여기 그대로 넣었어요.
+    실제 배포할 땐 이 script 태그를 지우고 index.html 맨 아래에
+    app.js 파일을 불러오는 태그 한 줄만 넣으면 app.js 파일을 그대로 써요.)
+
+   ✅ 데이터는 이제 localStorage에 저장돼요. 새로고침하거나 앱을
+   껐다 켜도 일정이 그대로 남아있어요. (이 폰의 이 브라우저 안에만
+   저장되는 거라, 파트너 폰이랑 자동으로 공유되진 않아요 — 그건
+   다음 단계인 Firebase 연동에서 해결할 부분이에요)
+   ============================================================ */
+
+const store = {
+  events: [],
+  profile: { name: '나', avatar: '🐻' },
+  load(){
+    try {
+      const saved = localStorage.getItem('coupleCalendarData');
+      if(saved) Object.assign(this, JSON.parse(saved));
+    } catch(e) {
+      console.warn('저장된 데이터를 불러오지 못했어요:', e);
+    }
+  },
+  save(){
+    try {
+      localStorage.setItem('coupleCalendarData', JSON.stringify({
+        events: this.events,
+        profile: this.profile
+      }));
+    } catch(e) {
+      console.warn('데이터를 저장하지 못했어요:', e);
+    }
+  }
+};
+store.load();
+
+const CATS = [
+  { key:'date',  label:'데이트', color:'#ff6b9d' },
+  { key:'anniv', label:'기념일', color:'#9b6bff' },
+  { key:'appt',  label:'약속',   color:'#38bdf8' },
+  { key:'trip',  label:'여행',   color:'#2dd4bf' },
+];
+const ICONS = ['🍰','✈️','💜','📌','🎂','🎉','🍜','📞','🎬','☕','🎁','🏖️'];
+
+function pad(n){ return String(n).padStart(2,'0'); }
+function todayStr(){
+  const d = new Date();
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+}
+function fmtDateLabel(dateStr){
+  const [y,m,d] = dateStr.split('-').map(Number);
+  return `${m}월 ${d}일`;
+}
+
+const tabs = document.querySelectorAll('.tab');
+const tabBtns = document.querySelectorAll('.tabbtn');
+function showTab(name){
+  tabs.forEach(t => t.classList.toggle('active', t.id === 'tab-' + name));
+  tabBtns.forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  if(name === 'calendar') renderCalendar();
+  if(name === 'home') renderHome();
+}
+tabBtns.forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
+
+const toastEl = document.getElementById('toast');
+function toast(msg){
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  setTimeout(() => toastEl.classList.remove('show'), 1600);
+}
+
+function eventRowHTML(ev){
+  return `
+    <div class="event-item">
+      <div class="icon-chip" style="background:${ev.catColor}">${ev.icon}</div>
+      <div class="etxt">
+        <div class="etitle">${ev.title}</div>
+        <div class="emeta">${fmtDateLabel(ev.date)} · ${ev.time}</div>
+      </div>
+      <button class="edel" data-id="${ev.id}">✕</button>
+    </div>`;
+}
+
+function renderHome(){
+  const now = new Date();
+  document.getElementById('todayLabel').textContent =
+    `${now.getMonth()+1}월 ${now.getDate()}일 ${['일','월','화','수','목','금','토'][now.getDay()]}요일`;
+  document.getElementById('homeDate').textContent = `${now.getMonth()+1}월 ${now.getDate()}일`;
+  document.getElementById('homeCount').textContent = `등록된 일정 ${store.events.length}개`;
+
+  const today = todayStr();
+  const todays = store.events.filter(e => e.date === today).sort((a,b)=>a.time.localeCompare(b.time));
+  const upcoming = store.events.filter(e => e.date > today).sort((a,b)=> a.date===b.date ? a.time.localeCompare(b.time) : a.date.localeCompare(b.date)).slice(0,5);
+
+  const todayList = document.getElementById('todayList');
+  const upcomingList = document.getElementById('upcomingList');
+  todayList.innerHTML = todays.length ? todays.map(eventRowHTML).join('') : `<div class="empty-state">오늘은 등록된 일정이 없어요 🌿</div>`;
+  upcomingList.innerHTML = upcoming.length ? upcoming.map(eventRowHTML).join('') : `<div class="empty-state">다가오는 일정이 없어요</div>`;
+
+  document.querySelectorAll('.edel').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      store.events = store.events.filter(e => e.id !== btn.dataset.id);
+      store.save();
+      renderHome();
+      toast('일정을 삭제했어요');
+    });
+  });
+}
+
+let calYear, calMonth, calSelectedDate;
+(function initCalDate(){
+  const now = new Date();
+  calYear = now.getFullYear(); calMonth = now.getMonth();
+  calSelectedDate = todayStr();
+})();
+
+const dowNames = ['일','월','화','수','목','금','토'];
+
+function renderCalendar(){
+  document.getElementById('calMonthLabel').textContent = `${calMonth+1}월 ${calYear}`;
+  const grid = document.getElementById('calGrid');
+  grid.innerHTML = '';
+  dowNames.forEach(d=>{
+    const el = document.createElement('div'); el.className='cal-dow'; el.textContent=d; grid.appendChild(el);
+  });
+
+  const firstDay = new Date(calYear, calMonth, 1).getDay();
+  const daysInMonth = new Date(calYear, calMonth+1, 0).getDate();
+  const prevDays = new Date(calYear, calMonth, 0).getDate();
+  const today = todayStr();
+
+  const eventsByDate = {};
+  store.events.forEach(e=>{ (eventsByDate[e.date] ||= []).push(e); });
+
+  for(let i=0; i<firstDay; i++){
+    const c = document.createElement('div'); c.className='cal-cell other';
+    c.innerHTML = `<span class="dnum">${prevDays-firstDay+1+i}</span>`;
+    grid.appendChild(c);
+  }
+  for(let d=1; d<=daysInMonth; d++){
+    const dateStr = `${calYear}-${pad(calMonth+1)}-${pad(d)}`;
+    const c = document.createElement('div');
+    c.className = 'cal-cell' + (dateStr===today?' today':'') + (dateStr===calSelectedDate?' selected':'');
+    const evs = eventsByDate[dateStr] || [];
+    const dots = evs.slice(0,3).map(e=>`<span class="dot" style="background:${e.catColor}"></span>`).join('');
+    c.innerHTML = `<span class="dnum">${d}</span><div class="dots">${dots}</div>`;
+    c.addEventListener('click', ()=>{ calSelectedDate = dateStr; renderCalendar(); });
+    grid.appendChild(c);
+  }
+
+  document.getElementById('calSelLabel').textContent = `${fmtDateLabel(calSelectedDate)} 일정`;
+  const selEvents = (eventsByDate[calSelectedDate] || []).sort((a,b)=>a.time.localeCompare(b.time));
+  const selList = document.getElementById('calSelList');
+  selList.innerHTML = selEvents.length ? selEvents.map(eventRowHTML).join('') : `<div class="empty-state">이 날짜엔 일정이 없어요</div>`;
+  selList.querySelectorAll('.edel').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      store.events = store.events.filter(e => e.id !== btn.dataset.id);
+      store.save();
+      renderCalendar();
+      toast('일정을 삭제했어요');
+    });
+  });
+}
+
+document.getElementById('prevMonth').addEventListener('click', ()=>{
+  calMonth--; if(calMonth<0){ calMonth=11; calYear--; } renderCalendar();
+});
+document.getElementById('nextMonth').addEventListener('click', ()=>{
+  calMonth++; if(calMonth>11){ calMonth=0; calYear++; } renderCalendar();
+});
+
+let addState = { icon: ICONS[0], cat: CATS[0] };
+
+const iconPicker = document.getElementById('iconPicker');
+ICONS.forEach((ic,i)=>{
+  const b = document.createElement('button');
+  b.className = 'icon-opt' + (i===0?' active':'');
+  b.textContent = ic;
+  b.addEventListener('click', ()=>{
+    iconPicker.querySelectorAll('.icon-opt').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+    addState.icon = ic;
+  });
+  iconPicker.appendChild(b);
+});
+
+const catRow = document.getElementById('catRow');
+CATS.forEach((c,i)=>{
+  const el = document.createElement('div');
+  el.className = 'cat-chip' + (i===0?' active':'');
+  el.style.setProperty('--cc', c.color);
+  el.innerHTML = `<div class="dot" style="background:${c.color}"></div><span>${c.label}</span>`;
+  el.addEventListener('click', ()=>{
+    catRow.querySelectorAll('.cat-chip').forEach(x=>x.classList.remove('active'));
+    el.classList.add('active');
+    addState.cat = c;
+  });
+  catRow.appendChild(el);
+});
+
+document.getElementById('dateInput').value = todayStr();
+
+const titleInput = document.getElementById('titleInput');
+const saveBtn = document.getElementById('saveBtn');
+titleInput.addEventListener('input', ()=>{
+  saveBtn.classList.toggle('ready', titleInput.value.trim().length > 0);
+});
+
+saveBtn.addEventListener('click', ()=>{
+  const title = titleInput.value.trim();
+  if(!title) return;
+  store.events.push({
+    id: 'ev_' + Date.now(),
+    title,
+    icon: addState.icon,
+    catKey: addState.cat.key,
+    catColor: addState.cat.color,
+    date: document.getElementById('dateInput').value || todayStr(),
+    time: document.getElementById('timeInput').value || '00:00',
+    memo: document.getElementById('memoInput').value.trim(),
+  });
+  store.save();
+
+  titleInput.value = '';
+  document.getElementById('memoInput').value = '';
+  saveBtn.classList.remove('ready');
+
+  toast('일정을 저장했어요 🎉');
+  showTab('home');
+});
+
+document.getElementById('myName').value = store.profile.name;
+document.getElementById('myName').addEventListener('input', (e)=>{
+  store.profile.name = e.target.value;
+  store.save();
+});
+document.getElementById('inviteBtn').addEventListener('click', ()=>{
+  toast('다음 단계에서 초대 코드 화면을 연결할 거예요');
+});
+
+renderHome();
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('service-worker.js').catch(()=>{});
+  });
+}
+</script>
+</body>
+</html>
