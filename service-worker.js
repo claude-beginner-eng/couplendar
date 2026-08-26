@@ -1,12 +1,12 @@
 // 아주 기본적인 서비스 워커예요.
 // 앱의 핵심 파일들을 캐시해둬서, 인터넷이 잠깐 끊겨도 앱이 열리게 해줘요.
-// (설치 가능한 PWA가 되려면 서비스 워커가 하나는 있어야 해요)
 
-const CACHE_NAME = 'couple-calendar-v1';
+const CACHE_NAME = 'couple-calendar-v2';
 const FILES_TO_CACHE = [
   './',
   './index.html',
   './app.js',
+  './firebase-config.js',
   './manifest.json',
 ];
 
@@ -27,6 +27,10 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+  // Firebase 서버 요청(실시간 데이터)은 캐시하지 않고 항상 최신으로 통과시켜요
+  if(event.request.url.includes('firestore.googleapis.com') || event.request.url.includes('googleapis.com')){
+    return;
+  }
   event.respondWith(
     caches.match(event.request).then((cached) => cached || fetch(event.request))
   );
