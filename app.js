@@ -14,7 +14,7 @@
 // 먹통이 돼요.
 let db = null;
 let firebaseReady = false;
-console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix8 (기념일 3종 + 설정순 정렬)', 'color:#8a3fae;font-weight:bold;');
+console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix9 (100일 마일스톤 + 카테고리 정리 + 진단로그)', 'color:#8a3fae;font-weight:bold;');
 try {
   firebase.initializeApp(firebaseConfig);
   db = firebase.firestore();
@@ -88,9 +88,9 @@ store.loadLocal();
 
 const CATS = [
   { key:'date',  label:'데이트', color:'#ff6b9d' },
-  { key:'anniv', label:'기념일', color:'#9b6bff' },
   { key:'appt',  label:'약속',   color:'#38bdf8' },
   { key:'trip',  label:'여행',   color:'#2dd4bf' },
+  { key:'etc',   label:'기타',   color:'#9b6bff' },
 ];
 const ICONS = ['🍰','✈️','💜','📌','🎂','🎉','🍜','📞','🎬','☕','🎁','🏖️'];
 const AVATAR_ICONS = ['🐻','🐰','🐱','🐶','🦊','🐼','🦁','🐨','🐯','🐥','🦄','🐧'];
@@ -222,6 +222,22 @@ function calAvatarDotsHTML(evs){
   return html;
 }
 
+// 기념일로부터 정확히 100일/200일/300일... 째 되는 날짜인지 확인
+function getMilestonesForDate(dateStr){
+  const list = (store.room && store.room.anniversaries) || [];
+  const target = new Date(dateStr + 'T00:00:00');
+  const results = [];
+  list.forEach(a=>{
+    const start = new Date(a.date + 'T00:00:00');
+    const diffDays = Math.round((target - start) / 86400000) + 1; // 한국식: 시작일이 1일째
+    if(diffDays > 0 && diffDays % 100 === 0){
+      const meta = ANNIV_TYPES.find(t => t.key === a.type);
+      results.push({ type:a.type, label: meta ? meta.label : '', icon: meta ? meta.icon : '💯', days: diffDays });
+    }
+  });
+  return results;
+}
+
 function renderCalendar(){
   document.getElementById('calMonthLabel').textContent = `${calMonth+1}월 ${calYear}`;
   const grid = document.getElementById('calGrid');
@@ -246,18 +262,27 @@ function renderCalendar(){
   for(let d=1; d<=daysInMonth; d++){
     const dateStr = `${calYear}-${pad(calMonth+1)}-${pad(d)}`;
     const c = document.createElement('div');
-    c.className = 'cal-cell' + (dateStr===today?' today':'') + (dateStr===calSelectedDate?' selected':'');
+    const milestones = getMilestonesForDate(dateStr);
+    c.className = 'cal-cell' + (dateStr===today?' today':'') + (dateStr===calSelectedDate?' selected':'') + (milestones.length ? ' cal-milestone':'');
     const evs = eventsByDate[dateStr] || [];
     const dots = calAvatarDotsHTML(evs);
-    c.innerHTML = `<span class="dnum">${d}</span><div class="dots">${dots}</div>`;
+    const milestoneBadge = milestones.length ? `<span class="cal-milestone-badge">💯</span>` : '';
+    c.innerHTML = `<span class="dnum">${d}</span>${milestoneBadge}<div class="dots">${dots}</div>`;
     c.addEventListener('click', ()=>{ calSelectedDate = dateStr; renderCalendar(); });
     grid.appendChild(c);
   }
 
   document.getElementById('calSelLabel').textContent = `${fmtDateLabel(calSelectedDate)} 일정`;
   const selEvents = (eventsByDate[calSelectedDate] || []).sort((a,b)=>a.time.localeCompare(b.time));
+  const selMilestones = getMilestonesForDate(calSelectedDate);
+  const milestoneHTML = selMilestones.map(m => `
+    <div class="event-item milestone-item">
+      <div class="icon-stack"><div class="icon-chip" style="background:#ffe1ef;">${m.icon}</div></div>
+      <div class="etxt"><div class="etitle">${m.label} ${m.days}일째 💯</div><div class="emeta">축하해요!</div></div>
+    </div>`).join('');
   const selList = document.getElementById('calSelList');
-  selList.innerHTML = selEvents.length ? selEvents.map(eventRowHTML).join('') : `<div class="empty-state">이 날짜엔 일정이 없어요</div>`;
+  const eventsHTML = selEvents.length ? selEvents.map(eventRowHTML).join('') : '';
+  selList.innerHTML = (milestoneHTML + eventsHTML) || `<div class="empty-state">이 날짜엔 일정이 없어요</div>`;
   bindDeleteButtons(selList);
 }
 
@@ -520,9 +545,11 @@ function renderAnniversary(){
   const roomInfo = store.getRoomInfo();
   const connected = !!(roomInfo && store.room); // 방이 만들어진 순간부터 활성화 (파트너 입장 전이어도 OK)
   const list = (connected && store.room.anniversaries) || [];
+  console.log('[renderAnniversary]', { roomInfo, storeRoom: store.room, connected });
 
   ANNIV_TYPES.forEach(t=>{
     const input = document.getElementById('annivInput-' + t.key);
+    if(!input){ console.warn('[renderAnniversary] input을 못 찾음:', 'annivInput-' + t.key); return; }
     input.disabled = !connected;
     const entry = list.find(a => a.type === t.key);
     input.value = entry ? entry.date : '';
