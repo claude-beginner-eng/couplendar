@@ -83,6 +83,7 @@
     display:flex; align-items:center; justify-content:center; font-size:7px;
     box-shadow:0 1px 2px rgba(0,0,0,.18);
   }
+  .cal-cell .cal-heart{ font-size:11px; line-height:1; }
   .cal-cell .cal-more{ font-size:7px; font-weight:800; color:var(--sub); align-self:center; margin-left:1px; }
 
   .field-group{ display:flex; flex-direction:column; gap:8px; margin-bottom:16px; }
@@ -124,8 +125,11 @@
   .save-btn:disabled{ opacity:.6; }
 
   .profile-card{ background:var(--card); border-radius:18px; padding:16px; box-shadow:0 4px 14px rgba(180,140,190,.14); display:flex; align-items:center; gap:14px; margin-bottom:14px; }
-  .avatar-big{ width:52px; height:52px; border-radius:50%; background:#faf3f8; display:flex; align-items:center; justify-content:center; font-size:26px; flex-shrink:0; }
+  .avatar-big{ width:52px; height:52px; border-radius:50%; background:#faf3f8; display:flex; align-items:center; justify-content:center; font-size:26px; flex-shrink:0; cursor:pointer; }
+  .avatar-big.empty{ border:2px dashed #d8c3e0; background:#fff; color:#c9b3d8; font-size:20px; }
   .name-input{ border:none; border-bottom:2px solid #f1e4ee; background:transparent; font-family:'Baloo 2'; font-size:15px; font-weight:700; color:var(--ink); padding:2px 0 4px; outline:none; width:100%; }
+  .name-input::placeholder{ color:#c9b3d8; font-weight:600; }
+  .name-input.warn{ border-bottom-color:#ff6b9d; }
 
   .invite-card{ background:#fbf3ff; border-radius:16px; padding:16px; text-align:center; margin-bottom:12px; }
   .invite-card p{ font-size:11.5px; color:var(--accent); font-weight:700; line-height:1.6; margin:0 0 10px; }
@@ -243,8 +247,8 @@
     <div class="app-header"><h1>설정</h1></div>
 
     <div class="profile-card">
-      <div class="avatar-big" id="myAvatar" title="탭해서 아바타 바꾸기">🐻</div>
-      <input class="name-input" id="myName" value="나" maxlength="8" />
+      <div class="avatar-big" id="myAvatar" title="탭해서 아바타 고르기">＋</div>
+      <input class="name-input" id="myName" value="" maxlength="8" placeholder="이름을 입력해주세요" />
     </div>
 
     <div class="icon-picker" id="avatarPicker" style="display:none; margin-bottom:14px;"></div>

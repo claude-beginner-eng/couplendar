@@ -42,7 +42,7 @@ let roomUnsub = null; // Firestore 실시간 리스너 해제 함수
 
 const store = {
   events: [],
-  profile: { name: '나', avatar: '🐻' },
+  profile: { name: '', avatar: '' }, // 처음엔 비워둠 — 방 생성/입장 전에 반드시 채우게 유도
   room: null, // 연결돼 있을 때만: { members, expiresAt, ... } (Firestore 원본)
 
   loadLocal(){
@@ -78,6 +78,12 @@ const store = {
     }
   }
 };
+
+// 프로필(이름/아바타)은 방 연결 여부와 상관없이 항상 있어야 하는 정보라,
+// 스크립트 맨 위에서 미리 로드해둬요. 이걸 나중에(초기화 마지막 단계에서)
+// 하면, 그 사이에 실행되는 화면 초기값 세팅(이름 입력창 등)이 예전 기본값을
+// 참조해버리는 문제가 있었어요.
+store.loadLocal();
 
 const CATS = [
   { key:'date',  label:'데이트', color:'#ff6b9d' },
@@ -202,11 +208,15 @@ const dowNames = ['일','월','화','수','목','금','토'];
 function calAvatarDotsHTML(evs){
   const members = getMemberList();
   const shown = evs.slice(0, 3).map(e=>{
+    if(e.who && e.who.length >= 2){
+      return `<span class="cal-heart">💗</span>`; // 둘이 함께하는 일정은 분홍 하트로
+    }
     const firstWhoId = e.who && e.who[0];
     const m = members.find(mm => mm.id === firstWhoId);
-    return m ? m.avatar : '👤'; // who 정보가 없는(예전) 일정은 기본 아이콘
+    const avatar = m ? m.avatar : '👤'; // who 정보가 없는(예전) 일정은 기본 아이콘
+    return `<span class="cal-av">${avatar}</span>`;
   });
-  let html = shown.map(a => `<span class="cal-av">${a}</span>`).join('');
+  let html = shown.join('');
   if(evs.length > 3) html += `<span class="cal-more">+${evs.length-3}</span>`;
   return html;
 }
@@ -358,11 +368,22 @@ saveBtn.addEventListener('click', async ()=>{
 /* ── 설정 탭: 프로필 ───────────────────────────────────────── */
 const myAvatarEl = document.getElementById('myAvatar');
 const avatarPicker = document.getElementById('avatarPicker');
+const myNameInput = document.getElementById('myName');
 
-myAvatarEl.textContent = store.profile.avatar;
-document.getElementById('myName').value = store.profile.name;
-document.getElementById('myName').addEventListener('input', (e)=>{
+function renderMyAvatar(){
+  if(store.profile.avatar){
+    myAvatarEl.textContent = store.profile.avatar;
+    myAvatarEl.classList.remove('empty');
+  } else {
+    myAvatarEl.textContent = '＋';
+    myAvatarEl.classList.add('empty');
+  }
+}
+renderMyAvatar();
+myNameInput.value = store.profile.name;
+myNameInput.addEventListener('input', (e)=>{
   store.profile.name = e.target.value;
+  myNameInput.classList.remove('warn');
   store.saveLocal(); // 이름은 항상 로컬에도 저장 (다음 방 생성/연결 시 사용)
 });
 
@@ -373,9 +394,10 @@ AVATAR_ICONS.forEach(a=>{
   b.addEventListener('click', ()=>{
     store.profile.avatar = a;
     store.saveLocal();
-    myAvatarEl.textContent = a;
+    renderMyAvatar();
     avatarPicker.querySelectorAll('.icon-opt').forEach(x=>x.classList.remove('active'));
     b.classList.add('active');
+    avatarPicker.style.display = 'none';
     buildWhoRow(); // 등록 탭의 내 아바타 표시도 최신으로
     renderHome();
     if(document.getElementById('tab-calendar').classList.contains('active')) renderCalendar();
@@ -385,6 +407,25 @@ AVATAR_ICONS.forEach(a=>{
 myAvatarEl.addEventListener('click', ()=>{
   avatarPicker.style.display = avatarPicker.style.display === 'none' ? 'grid' : 'none';
 });
+
+// 방 만들기/입장 전에 이름+아바타가 다 채워졌는지 확인.
+// 안 채워졌으면 경고하고, 프로필 카드로 눈에 띄게 안내해요.
+function ensureProfileReady(){
+  const nameOk = myNameInput.value.trim().length > 0;
+  const avatarOk = !!store.profile.avatar;
+  if(nameOk && avatarOk) return true;
+
+  toast('먼저 이름과 아바타부터 설정해주세요 👆');
+  if(!nameOk){
+    myNameInput.classList.add('warn');
+    myNameInput.focus();
+  }
+  if(!avatarOk){
+    avatarPicker.style.display = 'grid';
+    myAvatarEl.scrollIntoView({ behavior:'smooth', block:'center' });
+  }
+  return false;
+}
 
 /* ── 설정 탭: 파트너 연결(초대코드) ───────────────────────── */
 const inviteBtn   = document.getElementById('inviteBtn');
@@ -433,7 +474,29 @@ function renderSettingsRoomStatus(){
   }
 }
 
-function leaveRoom(){
+async function leaveRoom(){
+  const roomInfo = store.getRoomInfo();
+
+  // Firestore 쪽 방 문서에서도 내 정보를 실제로 지워요 (안 지우면 파트너
+  // 화면에는 내가 계속 "함께 쓰는 중"으로 남아있게 돼요)
+  if(firebaseReady && roomInfo){
+    try {
+      const ref = db.collection('rooms').doc(roomInfo.code);
+      const snap = await ref.get();
+      if(snap.exists){
+        const data = snap.data();
+        const remaining = (data.members || []).filter(m => m.id !== roomInfo.myId);
+        if(remaining.length === 0){
+          await ref.delete(); // 마지막 사람까지 나가면 방 자체를 정리
+        } else {
+          await ref.update({ members: remaining });
+        }
+      }
+    } catch(e){
+      console.warn('방에서 내 정보 제거 실패 (그래도 이 기기는 연결 해제돼요):', e);
+    }
+  }
+
   if(roomUnsub) { roomUnsub(); roomUnsub = null; }
   store.clearRoomInfo();
   store.room = null;
@@ -457,7 +520,17 @@ document.querySelectorAll('.rtab').forEach(t=>{
 // 코드 만들기: Firestore 트랜잭션으로 "이미 존재하면 실패, 없으면 그 자리에서 즉시 생성"
 // 이렇게 하면 두 사람이 동시에 같은 코드를 만들려고 해도 서버가 최종 심판이 되어
 // 반드시 한쪽만 성공해요 (실패하면 자동으로 새 코드로 재시도).
+// 방 생성/입장 시점에 쓸 "내 이름"을 화면 입력창에서 직접 읽어와요.
+// (store.profile.name에만 의존하면 초기화 순서 등으로 어긋날 수 있어서,
+// 지금 실제로 화면에 보이는/입력한 값을 그대로 쓰도록 확실히 해요)
+function getMyCurrentName(){
+  const name = myNameInput.value.trim();
+  store.profile.name = name; // 동기화
+  return name;
+}
+
 async function createRoom(password){
+  const myName = getMyCurrentName();
   for(let attempt = 0; attempt < 5; attempt++){
     let code = '';
     for(let i=0; i<12; i++) code += CODE_CHARS[Math.floor(Math.random()*CODE_CHARS.length)];
@@ -468,7 +541,7 @@ async function createRoom(password){
       if(doc.exists) return null; // 이미 있는 코드 -> 재시도
       tx.set(ref, {
         password,
-        members: [{ id: myId, name: store.profile.name, avatar: store.profile.avatar }],
+        members: [{ id: myId, name: myName, avatar: store.profile.avatar }],
         events: store.events,
         createdAt: Date.now(),
         expiresAt: Date.now() + ROOM_EXPIRY_MS,
@@ -505,6 +578,7 @@ function copyToClipboard(text){
 
 document.getElementById('createRoomBtn').addEventListener('click', async ()=>{
   if(!firebaseReady){ toast('아직 Firebase 연동이 안 됐어요. firebase-config.js를 확인해주세요'); return; }
+  if(!ensureProfileReady()) return;
   const pwInput = document.getElementById('roomPwInput');
   const pw = pwInput.value.trim();
   const btn = document.getElementById('createRoomBtn');
@@ -548,6 +622,7 @@ document.getElementById('copyCodeBtn').addEventListener('click', async ()=>{
 let joinAttempts = 0;
 document.getElementById('joinRoomBtn').addEventListener('click', async ()=>{
   if(!firebaseReady){ toast('아직 Firebase 연동이 안 됐어요. firebase-config.js를 확인해주세요'); return; }
+  if(!ensureProfileReady()) return;
   const codeRaw = document.getElementById('joinCodeInput').value.trim();
   const code = codeRaw.replace(/-/g, ''); // 대시(-) 넣어서 입력해도 자동으로 제거
   const pw = document.getElementById('joinPwInput').value.trim();
@@ -585,7 +660,8 @@ document.getElementById('joinRoomBtn').addEventListener('click', async ()=>{
 
     // 성공: 나를 멤버로 추가
     const myId = 'u_' + Date.now();
-    const newMembers = [...(data.members || []), { id: myId, name: store.profile.name, avatar: store.profile.avatar }];
+    const myName = getMyCurrentName();
+    const newMembers = [...(data.members || []), { id: myId, name: myName, avatar: store.profile.avatar }];
     await ref.update({ members: newMembers });
 
     store.setRoomInfo({ code, myId });
