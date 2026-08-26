@@ -14,7 +14,7 @@
 // 먹통이 돼요.
 let db = null;
 let firebaseReady = false;
-console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix17 (캘린더=초코케이크, 설정=가족 아이콘)', 'color:#8a3fae;font-weight:bold;');
+console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix18 (연애 시작일 = "우리가 된 날")', 'color:#8a3fae;font-weight:bold;');
 try {
   firebase.initializeApp(firebaseConfig);
   db = firebase.firestore();
@@ -253,7 +253,10 @@ function getMilestonesForDate(dateStr){
     const isStartDay = (a.date === dateStr);
 
     if(a.type === 'dating'){
-      // 연애: 100일 단위 + 1년 단위 둘 다
+      // 연애: 당일은 "우리가 된 날", 그 뒤로 100일 단위 + 1년 단위 둘 다
+      if(isStartDay){
+        results.push({ icon:'💗', text:'우리가 된 날' });
+      }
       const days = daysSince(a.date, dateStr);
       if(days > 0 && days % 100 === 0){
         results.push({ icon:'💗', text:`연애 ${days}일` });
