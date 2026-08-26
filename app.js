@@ -310,7 +310,10 @@ function buildWhoRow(){
   }
   whoSection.style.display = 'flex';
   if(addState.selectedWho.length === 0){
-    addState.selectedWho = members.map(m => m.id); // 기본값: 전체(=함께)
+    // 기본값: 나만 (함께로 등록하고 싶으면 파트너를 직접 눌러서 추가해야 함)
+    const roomInfo = store.getRoomInfo();
+    const myId = roomInfo ? roomInfo.myId : members[0].id;
+    addState.selectedWho = members.some(m => m.id === myId) ? [myId] : [members[0].id];
   }
   whoRow.innerHTML = '';
   members.forEach(m=>{
@@ -711,7 +714,22 @@ function initApp(){
 initApp();
 
 /* ── 서비스워커 등록 ───────────────────────────────────────── */
-if('serviceWorker' in navigator){
+// 🚧 개발 중엔 꺼둠: 이게 켜져 있으면 파일을 고쳐서 다시 올려도
+// 브라우저가 예전 캐시본을 계속 보여줘서 테스트가 꼬여요.
+// 앱이 어느 정도 완성돼서 실제로 배포할 준비가 되면, 아래 DEV_MODE를
+// false로 바꾸세요 (그래야 오프라인 지원 + 빠른 로딩 기능이 켜져요).
+const DEV_MODE = true;
+
+if(DEV_MODE && 'serviceWorker' in navigator){
+  // 이미 등록된 서비스워커가 있다면(예전 테스트 때) 지금 해제하고,
+  // 남아있는 캐시도 다 지워서 항상 최신 파일만 보게 해요.
+  navigator.serviceWorker.getRegistrations().then(regs=>{
+    regs.forEach(r => r.unregister());
+  });
+  if('caches' in window){
+    caches.keys().then(keys => keys.forEach(k => caches.delete(k)));
+  }
+} else if(!DEV_MODE && 'serviceWorker' in navigator){
   window.addEventListener('load', ()=>{
     navigator.serviceWorker.register('service-worker.js').catch(()=>{});
   });
