@@ -199,6 +199,18 @@ let calYear, calMonth, calSelectedDate;
 
 const dowNames = ['일','월','화','수','목','금','토'];
 
+function calAvatarDotsHTML(evs){
+  const members = getMemberList();
+  const shown = evs.slice(0, 3).map(e=>{
+    const firstWhoId = e.who && e.who[0];
+    const m = members.find(mm => mm.id === firstWhoId);
+    return m ? m.avatar : '👤'; // who 정보가 없는(예전) 일정은 기본 아이콘
+  });
+  let html = shown.map(a => `<span class="cal-av">${a}</span>`).join('');
+  if(evs.length > 3) html += `<span class="cal-more">+${evs.length-3}</span>`;
+  return html;
+}
+
 function renderCalendar(){
   document.getElementById('calMonthLabel').textContent = `${calMonth+1}월 ${calYear}`;
   const grid = document.getElementById('calGrid');
@@ -225,7 +237,7 @@ function renderCalendar(){
     const c = document.createElement('div');
     c.className = 'cal-cell' + (dateStr===today?' today':'') + (dateStr===calSelectedDate?' selected':'');
     const evs = eventsByDate[dateStr] || [];
-    const dots = evs.slice(0,3).map(e=>`<span class="dot" style="background:${e.catColor}"></span>`).join('');
+    const dots = calAvatarDotsHTML(evs);
     c.innerHTML = `<span class="dnum">${d}</span><div class="dots">${dots}</div>`;
     c.addEventListener('click', ()=>{ calSelectedDate = dateStr; renderCalendar(); });
     grid.appendChild(c);

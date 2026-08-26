@@ -77,8 +77,13 @@
   .cal-cell.today{ background:#fbf0fb; }
   .cal-cell.today .dnum{ color:var(--accent); font-weight:800; }
   .cal-cell.selected{ box-shadow:0 0 0 1.6px var(--accent) inset; }
-  .cal-cell .dots{ display:flex; gap:2px; margin-top:3px; }
-  .cal-cell .dot{ width:5px; height:5px; border-radius:50%; }
+  .cal-cell .dots{ display:flex; gap:1.5px; margin-top:3px; }
+  .cal-cell .cal-av{
+    width:11px; height:11px; border-radius:50%; background:#fff;
+    display:flex; align-items:center; justify-content:center; font-size:7px;
+    box-shadow:0 1px 2px rgba(0,0,0,.18);
+  }
+  .cal-cell .cal-more{ font-size:7px; font-weight:800; color:var(--sub); align-self:center; margin-left:1px; }
 
   .field-group{ display:flex; flex-direction:column; gap:8px; margin-bottom:16px; }
   .field-label{ font-size:11.5px; font-weight:800; color:var(--sub); padding:0 2px; }
