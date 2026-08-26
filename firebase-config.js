@@ -11,11 +11,10 @@
 // ------------------------------------------------------------
 
 const firebaseConfig = {
-  apiKey: "AIzaSyBvVzwLmWqAkKwYMkDuB-qj1slMkw0ukEI",
-  authDomain: "couplendar-cae52.firebaseapp.com",
-  projectId: "couplendar-cae52",
-  storageBucket: "couplendar-cae52.firebasestorage.app",
-  messagingSenderId: "29564185190",
-  appId: "1:29564185190:web:a22c956f86d947ecd8dba7",
-  measurementId: "G-JZY1T5D1HV"
+  apiKey: "여기에_본인_apiKey_붙여넣기",
+  authDomain: "여기에_본인_authDomain_붙여넣기",
+  projectId: "여기에_본인_projectId_붙여넣기",
+  storageBucket: "여기에_본인_storageBucket_붙여넣기",
+  messagingSenderId: "여기에_본인_messagingSenderId_붙여넣기",
+  appId: "여기에_본인_appId_붙여넣기"
 };

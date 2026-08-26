@@ -75,6 +75,16 @@ const CATS = [
   { key:'trip',  label:'여행',   color:'#2dd4bf' },
 ];
 const ICONS = ['🍰','✈️','💜','📌','🎂','🎉','🍜','📞','🎬','☕','🎁','🏖️'];
+const AVATAR_ICONS = ['🐻','🐰','🐱','🐶','🦊','🐼','🦁','🐨','🐯','🐥','🦄','🐧'];
+
+// 지금 등록/표시에 쓸 "멤버 목록" — 연결돼 있으면 방(room)의 멤버들,
+// 혼자면 나 하나뿐. 일정마다 "누구 것인지"를 표시할 때 이 목록에서 찾아요.
+function getMemberList(){
+  if(store.room && store.room.members && store.room.members.length){
+    return store.room.members;
+  }
+  return [{ id:'me', name: store.profile.name, avatar: store.profile.avatar }];
+}
 
 function pad(n){ return String(n).padStart(2,'0'); }
 function todayStr(){
@@ -97,6 +107,7 @@ function showTab(name){
   tabBtns.forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   if(name === 'calendar') renderCalendar();
   if(name === 'home') renderHome();
+  if(name === 'add') buildWhoRow(); // 멤버가 바뀌었을 수 있으니 등록 탭 들어갈 때마다 갱신
 }
 tabBtns.forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
 
@@ -109,10 +120,24 @@ function toast(msg){
 }
 
 /* ── 홈 탭 ─────────────────────────────────────────────────── */
+function avatarGroupHTML(who){
+  if(!who || !who.length) return '';
+  const members = getMemberList();
+  const shown = who.slice(0,3).map(id => members.find(m => m.id === id)).filter(Boolean);
+  if(!shown.length) return '';
+  const extra = who.length - shown.length;
+  let html = shown.map(m => `<div class="av">${m.avatar}</div>`).join('');
+  if(extra > 0) html += `<div class="av">+${extra}</div>`;
+  return `<div class="avatar-group">${html}</div>`;
+}
+
 function eventRowHTML(ev){
   return `
     <div class="event-item">
-      <div class="icon-chip" style="background:${ev.catColor}">${ev.icon}</div>
+      <div class="icon-stack">
+        <div class="icon-chip" style="background:${ev.catColor}">${ev.icon}</div>
+        ${avatarGroupHTML(ev.who)}
+      </div>
       <div class="etxt">
         <div class="etitle">${ev.title}</div>
         <div class="emeta">${fmtDateLabel(ev.date)} · ${ev.time}</div>
@@ -210,7 +235,7 @@ document.getElementById('nextMonth').addEventListener('click', ()=>{
 });
 
 /* ── 일정 등록 탭 ──────────────────────────────────────────── */
-let addState = { icon: ICONS[0], cat: CATS[0] };
+let addState = { icon: ICONS[0], cat: CATS[0], selectedWho: [] };
 
 const iconPicker = document.getElementById('iconPicker');
 ICONS.forEach((ic,i)=>{
@@ -239,6 +264,40 @@ CATS.forEach((c,i)=>{
   catRow.appendChild(el);
 });
 
+// 누구의 일정이에요? - 연결된 인원 수만큼 카드 생성, 탭으로 다중 선택.
+// 혼자 모드(멤버 1명)면 고를 게 없으니 섹션 자체를 숨기고 자동으로 나로 확정.
+const whoSection = document.getElementById('whoSection');
+const whoRow = document.getElementById('whoRow');
+function buildWhoRow(){
+  const members = getMemberList();
+  if(members.length <= 1){
+    whoSection.style.display = 'none';
+    addState.selectedWho = [members[0].id];
+    return;
+  }
+  whoSection.style.display = 'flex';
+  if(addState.selectedWho.length === 0){
+    addState.selectedWho = members.map(m => m.id); // 기본값: 전체(=함께)
+  }
+  whoRow.innerHTML = '';
+  members.forEach(m=>{
+    const chip = document.createElement('div');
+    chip.className = 'who-chip' + (addState.selectedWho.includes(m.id) ? ' active' : '');
+    chip.innerHTML = `<div class="a-circle">${m.avatar}</div><span>${m.name}</span>`;
+    chip.addEventListener('click', ()=>{
+      const i = addState.selectedWho.indexOf(m.id);
+      if(i >= 0){
+        if(addState.selectedWho.length > 1) addState.selectedWho.splice(i,1); // 최소 1명은 선택 유지
+      } else {
+        addState.selectedWho.push(m.id);
+      }
+      buildWhoRow();
+    });
+    whoRow.appendChild(chip);
+  });
+}
+buildWhoRow();
+
 document.getElementById('dateInput').value = todayStr();
 
 const titleInput = document.getElementById('titleInput');
@@ -256,6 +315,7 @@ saveBtn.addEventListener('click', async ()=>{
     icon: addState.icon,
     catKey: addState.cat.key,
     catColor: addState.cat.color,
+    who: [...addState.selectedWho],
     date: document.getElementById('dateInput').value || todayStr(),
     time: document.getElementById('timeInput').value || '00:00',
     memo: document.getElementById('memoInput').value.trim(),
@@ -265,16 +325,42 @@ saveBtn.addEventListener('click', async ()=>{
   titleInput.value = '';
   document.getElementById('memoInput').value = '';
   saveBtn.classList.remove('ready');
+  addState.selectedWho = []; // 다음 등록 때 다시 기본값(전체 선택)으로
+  buildWhoRow();
 
   toast('일정을 저장했어요 🎉');
   showTab('home');
 });
 
 /* ── 설정 탭: 프로필 ───────────────────────────────────────── */
+const myAvatarEl = document.getElementById('myAvatar');
+const avatarPicker = document.getElementById('avatarPicker');
+
+myAvatarEl.textContent = store.profile.avatar;
 document.getElementById('myName').value = store.profile.name;
 document.getElementById('myName').addEventListener('input', (e)=>{
   store.profile.name = e.target.value;
   store.saveLocal(); // 이름은 항상 로컬에도 저장 (다음 방 생성/연결 시 사용)
+});
+
+AVATAR_ICONS.forEach(a=>{
+  const b = document.createElement('button');
+  b.className = 'icon-opt' + (a === store.profile.avatar ? ' active' : '');
+  b.textContent = a;
+  b.addEventListener('click', ()=>{
+    store.profile.avatar = a;
+    store.saveLocal();
+    myAvatarEl.textContent = a;
+    avatarPicker.querySelectorAll('.icon-opt').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+    buildWhoRow(); // 등록 탭의 내 아바타 표시도 최신으로
+    renderHome();
+    if(document.getElementById('tab-calendar').classList.contains('active')) renderCalendar();
+  });
+  avatarPicker.appendChild(b);
+});
+myAvatarEl.addEventListener('click', ()=>{
+  avatarPicker.style.display = avatarPicker.style.display === 'none' ? 'grid' : 'none';
 });
 
 /* ── 설정 탭: 파트너 연결(초대코드) ───────────────────────── */
@@ -287,21 +373,22 @@ function renderSettingsRoomStatus(){
   if(!firebaseReady){
     roomStatusText.innerHTML = '⚠️ <b>파트너 초대 기능이 아직 연결 안 됐어요.</b><br/>firebase-config.js에 본인 Firebase 키를 넣고, Firestore 규칙을 게시했는지 확인해주세요.';
     inviteBtn.style.display = 'none';
+    roomPanel.style.display = 'none';
     return;
   }
-  inviteBtn.style.display = '';
   const roomInfo = store.getRoomInfo();
   if(roomInfo && store.room){
     const members = store.room.members || [];
     const names = members.map(m => m.name).join(', ');
     roomStatusText.innerHTML = `🎉 <b>연결됨</b> — 함께 쓰는 중: ${names}`;
+    inviteBtn.style.display = '';
     inviteBtn.textContent = '연결 해제하기';
     inviteBtn.onclick = leaveRoom;
-    roomPanel.style.display = 'none';
+    roomPanel.style.display = 'none'; // 연결됐으면 코드 만들기/입력 패널은 필요 없음
   } else {
-    roomStatusText.textContent = '아직 혼자 쓰는 중이에요. 파트너를 초대하면 그 순간부터 함께 쓰는 모드가 열려요.';
-    inviteBtn.textContent = '파트너 초대하기';
-    inviteBtn.onclick = () => { roomPanel.style.display = roomPanel.style.display === 'none' ? 'block' : 'none'; };
+    roomStatusText.textContent = '아래에서 코드를 만들거나 입력해서 파트너와 연결해보세요.';
+    inviteBtn.style.display = 'none'; // 패널이 기본으로 보이니 별도 버튼 불필요
+    roomPanel.style.display = 'block'; // 기본으로 바로 보이게
   }
 }
 
@@ -352,6 +439,29 @@ async function createRoom(password){
   throw new Error('코드 생성에 실패했어요. 인터넷 연결을 확인하고 다시 시도해주세요.');
 }
 
+let lastIssuedCode = null;
+let lastIssuedPassword = null;
+
+function copyToClipboard(text){
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    return navigator.clipboard.writeText(text);
+  }
+  // 구형 Safari 등 navigator.clipboard가 없는 환경을 위한 대체 방법
+  return new Promise((resolve, reject)=>{
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.focus(); ta.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      ok ? resolve() : reject(new Error('복사 실패'));
+    } catch(e){ reject(e); }
+  });
+}
+
 document.getElementById('createRoomBtn').addEventListener('click', async ()=>{
   if(!firebaseReady){ toast('아직 Firebase 연동이 안 됐어요. firebase-config.js를 확인해주세요'); return; }
   const pwInput = document.getElementById('roomPwInput');
@@ -363,15 +473,33 @@ document.getElementById('createRoomBtn').addEventListener('click', async ()=>{
   try {
     const { code, myId } = await createRoom(pw);
     store.setRoomInfo({ code, myId });
+    lastIssuedCode = code;
+    lastIssuedPassword = pw;
     document.getElementById('roomCode').textContent = formatCodeDisplay(code);
     document.getElementById('roomCodeBox').style.display = 'block';
-    toast('코드가 발급됐어요! 이 코드+비밀번호를 파트너에게 전달해주세요');
+    toast('코드가 발급됐어요! 아래 복사 버튼을 눌러 파트너에게 전달해주세요');
     connectToRoomListener(code);
   } catch(e){
     toast(e.message || '코드 발급에 실패했어요');
     console.error(e);
   } finally {
     btn.disabled = false; btn.textContent = '코드 발급하고 공유하기';
+  }
+});
+
+document.getElementById('copyCodeBtn').addEventListener('click', async ()=>{
+  if(!lastIssuedCode) return;
+  const text = `초대 코드: ${formatCodeDisplay(lastIssuedCode)}\n비밀번호: ${lastIssuedPassword}`;
+  const btn = document.getElementById('copyCodeBtn');
+  try {
+    await copyToClipboard(text);
+    const original = btn.textContent;
+    btn.textContent = '✅ 복사됐어요!';
+    toast('코드+비밀번호가 복사됐어요. 파트너에게 붙여넣기 하세요');
+    setTimeout(()=>{ btn.textContent = original; }, 1600);
+  } catch(e){
+    toast('복사에 실패했어요. 코드를 직접 길게 눌러서 복사해주세요');
+    console.warn('클립보드 복사 실패:', e);
   }
 });
 
