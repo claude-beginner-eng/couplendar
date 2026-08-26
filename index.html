@@ -31,10 +31,11 @@
   .app-header h1{ font-family:'Baloo 2'; font-size:20px; margin:0; color:var(--ink); }
   .app-header .sub{ font-size:12px; color:var(--sub); margin-top:2px; }
   .dday-badges{
-    display:none; flex-direction:row; flex-wrap:wrap; gap:4px; position:absolute;
-    top:calc(env(safe-area-inset-top) + 18px); right:20px; max-width:150px; justify-content:flex-end;
+    display:none; flex-direction:column; gap:4px; position:absolute;
+    top:calc(env(safe-area-inset-top) + 18px); right:20px; max-width:160px; align-items:flex-end;
   }
   .dday-badges.show{ display:flex; }
+  .dday-row{ display:flex; flex-direction:row; gap:4px; }
   .dday-badge{
     background:#fbf0fb; color:#c2417a; font-size:10px; font-weight:800;
     padding:5px 8px; border-radius:999px; display:flex; align-items:center; gap:3px; white-space:nowrap;
@@ -172,7 +173,14 @@
     font-family:'Nanum Gothic'; font-weight:700; font-size:12.5px; color:var(--ink); outline:none;
   }
   .anniv-input:disabled{ color:#c9bfd8; }
-  .anniv-birth-fields{ flex:1; min-width:0; display:flex; flex-direction:column; gap:6px; }
+  .anniv-birth-row{ align-items:flex-start; }
+  .anniv-birth-list{ flex:1; min-width:0; display:flex; flex-direction:column; gap:8px; }
+  .anniv-birth-entry{ display:flex; align-items:center; gap:6px; }
+  .anniv-birth-entry .anniv-name-input{ flex:0 0 74px; }
+  .anniv-birth-entry .anniv-input{ flex:1; min-width:0; }
+  .anniv-del-btn{ border:none; background:none; color:#d8c3e0; font-size:14px; cursor:pointer; padding:4px; flex-shrink:0; }
+  .anniv-birth-new{ opacity:.75; }
+  .anniv-add-plus{ font-size:13px; color:var(--accent); font-weight:800; flex-shrink:0; padding:0 4px; }
   .anniv-name-input{
     width:100%; border:none; background:#faf3f8; border-radius:11px; padding:9px 10px;
     font-family:'Nanum Gothic'; font-weight:700; font-size:12.5px; color:var(--ink); outline:none;

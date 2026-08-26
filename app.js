@@ -14,7 +14,7 @@
 // 먹통이 돼요.
 let db = null;
 let firebaseReady = false;
-console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix10 (가로 D-day 배지 + 탄생=아이이름)', 'color:#8a3fae;font-weight:bold;');
+console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix12 (탄생 여러 명 등록 가능)', 'color:#8a3fae;font-weight:bold;');
 try {
   firebase.initializeApp(firebaseConfig);
   db = firebase.firestore();
@@ -531,29 +531,94 @@ const annivHint = document.getElementById('annivHint');
 
 // 설정 화면의 3개 입력 줄을 미리 만들어둠 (연애/결혼/탄생 고정 순서 - 편집하기 쉬우라고)
 ANNIV_TYPES.forEach(t=>{
+  if(t.key === 'birth') return; // 탄생(아기)은 인원 제한 없이 여러 명 등록해야 해서 아래에서 별도로 처리
   const row = document.createElement('div');
   row.className = 'anniv-row';
-  if(t.key === 'birth'){
-    row.innerHTML = `
-      <div class="aicon">${t.icon}</div>
-      <div class="anniv-birth-fields">
-        <input type="text" class="anniv-name-input" id="annivName-birth" placeholder="아이 이름" maxlength="6" disabled />
-        <input type="date" class="anniv-input" id="annivInput-birth" disabled />
-      </div>
-    `;
-    annivRows.appendChild(row);
-    row.querySelector('#annivName-birth').addEventListener('change', (e)=> saveAnnivEntry('birth', { name: e.target.value.trim() }));
-    row.querySelector('#annivInput-birth').addEventListener('change', (e)=> saveAnnivEntry('birth', { date: e.target.value }));
-  } else {
-    row.innerHTML = `
-      <div class="aicon">${t.icon}</div>
-      <div class="alabel">${t.label}</div>
-      <input type="date" class="anniv-input" id="annivInput-${t.key}" disabled />
-    `;
-    annivRows.appendChild(row);
-    row.querySelector('input').addEventListener('change', (e)=> saveAnnivEntry(t.key, { date: e.target.value }));
-  }
+  row.innerHTML = `
+    <div class="aicon">${t.icon}</div>
+    <div class="alabel">${t.label}</div>
+    <input type="date" class="anniv-input" id="annivInput-${t.key}" disabled />
+  `;
+  annivRows.appendChild(row);
+  row.querySelector('input').addEventListener('change', (e)=> saveAnnivEntry(t.key, { date: e.target.value }));
 });
+
+// 탄생(아기)만 몇 명이든 추가할 수 있는 목록으로 따로 렌더링
+const birthRow = document.createElement('div');
+birthRow.className = 'anniv-row anniv-birth-row';
+birthRow.innerHTML = `<div class="aicon">👶</div><div class="anniv-birth-list" id="annivBirthList"></div>`;
+annivRows.appendChild(birthRow);
+
+function renderBirthList(){
+  const roomInfo = store.getRoomInfo();
+  const connected = !!(roomInfo && store.room);
+  const list = document.getElementById('annivBirthList');
+  const entries = connected ? (store.room.anniversaries || []).filter(a => a.type === 'birth') : [];
+
+  list.innerHTML = '';
+
+  entries.forEach(entry=>{
+    const row = document.createElement('div');
+    row.className = 'anniv-birth-entry';
+    row.innerHTML = `
+      <input type="text" class="anniv-name-input" placeholder="아이 이름" maxlength="6" value="${entry.name || ''}" />
+      <input type="date" class="anniv-input" value="${entry.date}" />
+      <button class="anniv-del-btn" type="button" title="삭제">✕</button>
+    `;
+    const nameInput = row.children[0], dateInput = row.children[1], delBtn = row.children[2];
+    nameInput.addEventListener('change', ()=> updateBirthEntry(entry.id, { name: nameInput.value.trim() }));
+    dateInput.addEventListener('change', ()=> updateBirthEntry(entry.id, { date: dateInput.value }));
+    delBtn.addEventListener('click', ()=> removeBirthEntry(entry.id));
+    list.appendChild(row);
+  });
+
+  // 새 아이를 추가할 수 있는 빈 줄 (날짜를 넣는 순간 새 항목으로 저장됨)
+  const addRow = document.createElement('div');
+  addRow.className = 'anniv-birth-entry anniv-birth-new';
+  addRow.innerHTML = `
+    <input type="text" class="anniv-name-input" placeholder="아이 이름" maxlength="6" ${connected ? '' : 'disabled'} />
+    <input type="date" class="anniv-input" ${connected ? '' : 'disabled'} />
+    <span class="anniv-add-plus">＋</span>
+  `;
+  const newName = addRow.children[0], newDate = addRow.children[1];
+  const tryAddNew = ()=> { if(newDate.value) addBirthEntry(newName.value.trim(), newDate.value); };
+  newDate.addEventListener('change', tryAddNew);
+  list.appendChild(addRow);
+}
+
+async function addBirthEntry(name, date){
+  const roomInfo = store.getRoomInfo();
+  if(!roomInfo || !firebaseReady || !date) return;
+  const current = (store.room && store.room.anniversaries) || [];
+  const entry = { type:'birth', id:'b_' + Date.now(), date, setAt: Date.now() };
+  if(name) entry.name = name;
+  try {
+    await db.collection('rooms').doc(roomInfo.code).update({ anniversaries: [...current, entry] });
+    toast('아이 기념일을 추가했어요 👶');
+  } catch(e){ toast('저장에 실패했어요'); console.warn('탄생 기념일 추가 실패:', e); }
+}
+
+async function updateBirthEntry(id, patch){
+  const roomInfo = store.getRoomInfo();
+  if(!roomInfo || !firebaseReady) return;
+  const current = (store.room && store.room.anniversaries) || [];
+  const updated = current.map(a => (a.type === 'birth' && a.id === id) ? { ...a, ...patch } : a);
+  try {
+    await db.collection('rooms').doc(roomInfo.code).update({ anniversaries: updated });
+    toast('저장했어요 💗');
+  } catch(e){ toast('저장에 실패했어요'); console.warn('탄생 기념일 수정 실패:', e); }
+}
+
+async function removeBirthEntry(id){
+  const roomInfo = store.getRoomInfo();
+  if(!roomInfo || !firebaseReady) return;
+  const current = (store.room && store.room.anniversaries) || [];
+  const updated = current.filter(a => !(a.type === 'birth' && a.id === id));
+  try {
+    await db.collection('rooms').doc(roomInfo.code).update({ anniversaries: updated });
+    toast('삭제했어요');
+  } catch(e){ toast('삭제에 실패했어요'); console.warn('탄생 기념일 삭제 실패:', e); }
+}
 
 function renderAnniversary(){
   const roomInfo = store.getRoomInfo();
@@ -562,22 +627,18 @@ function renderAnniversary(){
   console.log('[renderAnniversary]', { roomInfo, storeRoom: store.room, connected });
 
   ANNIV_TYPES.forEach(t=>{
+    if(t.key === 'birth') return; // 탄생은 renderBirthList()가 따로 처리
     const input = document.getElementById('annivInput-' + t.key);
     if(!input){ console.warn('[renderAnniversary] input을 못 찾음:', 'annivInput-' + t.key); return; }
     input.disabled = !connected;
     const entry = list.find(a => a.type === t.key);
     input.value = entry ? entry.date : '';
-    if(t.key === 'birth'){
-      const nameInput = document.getElementById('annivName-birth');
-      if(nameInput){
-        nameInput.disabled = !connected;
-        nameInput.value = (entry && entry.name) ? entry.name : '';
-      }
-    }
   });
 
+  renderBirthList();
+
   annivHint.textContent = connected
-    ? (list.length ? '기념일이 파트너 화면에도 똑같이 보여요. 먼저 설정한 순서로 위에서부터 표시돼요.' : '기념일을 정하면 설정을 제외한 모든 화면 상단에 D-day가 떠요.')
+    ? (list.length ? '기념일이 파트너 화면에도 똑같이 보여요. 상단 배지는 연애·결혼이 첫째 줄, 탄생이 둘째 줄에 나와요.' : '기념일을 정하면 설정을 제외한 모든 화면 상단에 D-day가 떠요.')
     : '파트너와 연결하면 기념일을 설정할 수 있어요';
 }
 
@@ -621,19 +682,25 @@ function formatDday(dateStr){
 function updateDdayBadges(){
   const containers = document.querySelectorAll('.dday-badges');
   const list = (store.room && store.room.anniversaries) || [];
-  // 먼저 설정한(setAt이 이른) 순서대로 정렬 -> 그게 가장 위(첫 번째)로
-  const sorted = [...list].sort((a,b) => (a.setAt||0) - (b.setAt||0));
+  // 나중에 등록한 게 왼쪽(먼저) 오도록 내림차순 정렬 -> 새로 등록하면
+  // 그게 왼쪽 자리를 차지하면서 기존에 있던 것들이 오른쪽으로 밀림
+  const sorted = [...list].sort((a,b) => (b.setAt||0) - (a.setAt||0));
 
-  if(sorted.length === 0){
-    containers.forEach(c => { c.innerHTML = ''; c.classList.remove('show'); });
-    return;
-  }
-  const html = sorted.map(a=>{
+  const coupleList = sorted.filter(a => a.type === 'dating' || a.type === 'marriage'); // 1번째 줄: 연애·결혼
+  const babyList = sorted.filter(a => a.type === 'birth'); // 2번째 줄: 탄생(아기)
+
+  function badgeHTML(a){
     const meta = ANNIV_TYPES.find(t => t.key === a.type);
     const label = (a.type === 'birth' && a.name) ? a.name : '';
     return `<span class="dday-badge">${meta ? meta.icon : '💗'}${label ? ' '+label : ''} ${formatDday(a.date)}</span>`;
-  }).join('');
-  containers.forEach(c => { c.innerHTML = html; c.classList.add('show'); });
+  }
+
+  const row1 = coupleList.map(badgeHTML).join('');
+  const row2 = babyList.map(badgeHTML).join('');
+  const html = (row1 ? `<div class="dday-row">${row1}</div>` : '') + (row2 ? `<div class="dday-row">${row2}</div>` : '');
+  const hasAny = coupleList.length > 0 || babyList.length > 0;
+
+  containers.forEach(c => { c.innerHTML = html; c.classList.toggle('show', hasAny); });
 }
 
 async function leaveRoom(){
