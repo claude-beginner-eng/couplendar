@@ -14,6 +14,7 @@
 // 먹통이 돼요.
 let db = null;
 let firebaseReady = false;
+console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix5 (selectedWho 정리 로직 추가)', 'color:#8a3fae;font-weight:bold;');
 try {
   firebase.initializeApp(firebaseConfig);
   db = firebase.firestore();
@@ -303,6 +304,13 @@ const whoSection = document.getElementById('whoSection');
 const whoRow = document.getElementById('whoRow');
 function buildWhoRow(){
   const members = getMemberList();
+  const memberIds = members.map(m => m.id);
+
+  // 멤버 목록이 바뀔 수 있어요(혼자 모드 -> 연결 등). 그럴 때 예전에 쓰던
+  // 임시 id('me' 같은)가 선택 목록에 남아있으면 지금 실제 멤버 id랑 안 맞아서
+  // 선택 상태가 꼬여요. 그래서 매번 "지금 존재하는 멤버"만 남기고 정리해요.
+  addState.selectedWho = addState.selectedWho.filter(id => memberIds.includes(id));
+
   if(members.length <= 1){
     whoSection.style.display = 'none';
     addState.selectedWho = [members[0].id];
@@ -313,7 +321,7 @@ function buildWhoRow(){
     // 기본값: 나만 (함께로 등록하고 싶으면 파트너를 직접 눌러서 추가해야 함)
     const roomInfo = store.getRoomInfo();
     const myId = roomInfo ? roomInfo.myId : members[0].id;
-    addState.selectedWho = members.some(m => m.id === myId) ? [myId] : [members[0].id];
+    addState.selectedWho = memberIds.includes(myId) ? [myId] : [members[0].id];
   }
   whoRow.innerHTML = '';
   members.forEach(m=>{
@@ -361,7 +369,7 @@ saveBtn.addEventListener('click', async ()=>{
   titleInput.value = '';
   document.getElementById('memoInput').value = '';
   saveBtn.classList.remove('ready');
-  addState.selectedWho = []; // 다음 등록 때 다시 기본값(전체 선택)으로
+  addState.selectedWho = []; // 다음 등록 때 다시 기본값(나만)으로
   buildWhoRow();
 
   toast('일정을 저장했어요 🎉');
