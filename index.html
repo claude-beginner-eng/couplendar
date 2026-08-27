@@ -85,6 +85,33 @@
   .cal-nav button{ border:none; background:var(--card); width:34px; height:34px; border-radius:50%; font-size:14px; color:var(--accent); box-shadow:0 3px 8px rgba(180,140,190,.14); cursor:pointer; }
   .cal-nav .cmonth{ font-family:'Baloo 2'; font-size:16px; font-weight:700; }
   .cal-nav-center{ display:flex; flex-direction:column; align-items:center; gap:3px; }
+
+  .multi-select-row{ display:flex; justify-content:flex-end; margin-bottom:10px; }
+  .multi-select-btn{
+    border:none; background:var(--card); color:var(--sub); font-size:10.5px; font-weight:800;
+    padding:6px 12px; border-radius:999px; cursor:pointer; box-shadow:0 3px 8px rgba(180,140,190,.12);
+  }
+  .multi-select-btn.active{ background:var(--accent); color:#fff; }
+
+  .cal-cell.multi-checked{ box-shadow:0 0 0 2px var(--accent) inset; background:#fbf0fb; }
+  .cal-cell.multi-checked::after{
+    content:'✓'; position:absolute; bottom:1px; left:2px; font-size:8px; font-weight:800; color:var(--accent);
+  }
+
+  .multi-select-bar{
+    position:sticky; bottom:70px; margin-top:14px; background:#2b1f3d; color:#fff; border-radius:16px;
+    padding:12px 14px; display:flex; align-items:center; justify-content:space-between; gap:10px;
+    box-shadow:0 8px 20px rgba(0,0,0,.25); font-size:11.5px; font-weight:800;
+  }
+  .multi-select-actions{ display:flex; gap:8px; }
+  .multi-cancel-btn{ border:none; background:rgba(255,255,255,.15); color:#fff; font-size:10.5px; font-weight:800; padding:8px 12px; border-radius:999px; cursor:pointer; }
+  .multi-add-btn{ border:none; background:var(--accent); color:#fff; font-size:10.5px; font-weight:800; padding:8px 14px; border-radius:999px; cursor:pointer; }
+
+  .multi-dates-box{ background:var(--card); border-radius:14px; padding:12px; box-shadow:0 3px 10px rgba(180,140,190,.12); }
+  .mdb-header{ display:flex; align-items:center; justify-content:space-between; font-size:11.5px; font-weight:800; color:var(--ink); margin-bottom:8px; }
+  .mdb-header button{ border:none; background:none; color:var(--sub); font-size:10.5px; font-weight:800; cursor:pointer; }
+  .multi-dates-chips{ display:flex; flex-wrap:wrap; gap:6px; }
+  .mdate-chip{ background:#faf3f8; color:var(--ink); font-size:10.5px; font-weight:700; padding:5px 10px; border-radius:999px; }
   .today-btn{
     border:none; background:#fbf0fb; color:var(--accent); font-size:9.5px; font-weight:800;
     padding:3px 10px; border-radius:999px !important; cursor:pointer; width:auto !important; height:auto !important;
@@ -106,6 +133,7 @@
   }
   .cal-cell .cal-heart{ font-size:11px; line-height:1; }
   .cal-cell.cal-milestone{ background:#fff0f7; box-shadow:0 0 0 1.4px #ff9fc0 inset; }
+  .cal-cell.cal-holiday .dnum{ color:#e0405f; }
   .cal-cell .cal-milestone-badge{ position:absolute; top:1px; right:2px; font-size:9px; }
   .milestone-item{ background:#fff0f7 !important; }
   .cal-cell .cal-more{ font-size:7px; font-weight:800; color:var(--sub); align-self:center; margin-left:1px; }
@@ -257,12 +285,22 @@
       </div>
       <button id="nextMonth">›</button>
     </div>
+    <div class="multi-select-row">
+      <button class="multi-select-btn" id="multiSelectBtn">📌 여러 날짜 선택</button>
+    </div>
     <div class="cal-grid" id="calGrid"></div>
-    <div class="cal-sel-header">
+    <div class="cal-sel-header" id="calSelHeader">
       <div class="section-title" id="calSelLabel" style="margin:0;">선택한 날짜 일정</div>
       <button class="cal-add-btn" id="calAddBtn">+ 일정 추가</button>
     </div>
     <div id="calSelList"></div>
+    <div class="multi-select-bar" id="multiSelectBar" style="display:none;">
+      <span id="multiSelectCount">0일 선택됨</span>
+      <div class="multi-select-actions">
+        <button class="multi-cancel-btn" id="multiCancelBtn">취소</button>
+        <button class="multi-add-btn" id="multiAddBtn">선택한 날짜에 일정 추가</button>
+      </div>
+    </div>
   </div>
 
   <!-- ═══ 일정 등록 ═══ -->
@@ -301,6 +339,17 @@
       <div class="row2" id="periodDateRow" style="display:none;">
         <div class="field"><span class="flabel">시작일</span><input type="date" id="startDateInput" /></div>
         <div class="field"><span class="flabel">종료일</span><input type="date" id="endDateInput" /></div>
+      </div>
+      <div class="multi-dates-box" id="multiDatesInfo" style="display:none;">
+        <div class="mdb-header">
+          <span>선택한 날짜 <b id="multiDatesCount">0</b>일</span>
+          <button type="button" id="multiDatesCancelBtn">✕ 취소</button>
+        </div>
+        <div class="multi-dates-chips" id="multiDatesChips"></div>
+        <div class="field" style="margin-top:10px;">
+          <span class="flabel">시간 (모든 날짜에 동일 적용)</span>
+          <input type="time" id="multiTimeInput" value="19:00" />
+        </div>
       </div>
     </div>
 

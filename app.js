@@ -14,7 +14,7 @@
 // 먹통이 돼요.
 let db = null;
 let firebaseReady = false;
-console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix20 (캘린더 날짜 -> 등록 탭 바로가기)', 'color:#8a3fae;font-weight:bold;');
+console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix22 (여러 날짜 선택 등록 기능)', 'color:#8a3fae;font-weight:bold;');
 try {
   firebase.initializeApp(firebaseConfig);
   db = firebase.firestore();
@@ -85,6 +85,30 @@ const store = {
 // 하면, 그 사이에 실행되는 화면 초기값 세팅(이름 입력창 등)이 예전 기본값을
 // 참조해버리는 문제가 있었어요.
 store.loadLocal();
+
+// 2026년 대한민국 공휴일 (대체공휴일 포함). 필요하면 나중에 다른 연도도 추가 가능해요.
+const HOLIDAYS_KR = {
+  '2026-01-01': '신정',
+  '2026-02-16': '설날 연휴',
+  '2026-02-17': '설날',
+  '2026-02-18': '설날 연휴',
+  '2026-03-01': '삼일절',
+  '2026-03-02': '삼일절 대체공휴일',
+  '2026-05-05': '어린이날',
+  '2026-05-24': '부처님오신날',
+  '2026-05-25': '부처님오신날 대체공휴일',
+  '2026-06-06': '현충일',
+  '2026-07-17': '제헌절',
+  '2026-08-15': '광복절',
+  '2026-08-17': '광복절 대체공휴일',
+  '2026-09-24': '추석 연휴',
+  '2026-09-25': '추석',
+  '2026-09-26': '추석 연휴',
+  '2026-10-03': '개천절',
+  '2026-10-05': '개천절 대체공휴일',
+  '2026-10-09': '한글날',
+  '2026-12-25': '크리스마스',
+};
 
 const CATS = [
   { key:'date',  label:'데이트', color:'#ff6b9d' },
@@ -230,6 +254,10 @@ let calYear, calMonth, calSelectedDate;
   calSelectedDate = todayStr();
 })();
 
+// 여러 날짜 선택 모드 (연속되지 않는 특정 날짜들을 골라 한번에 같은 내용으로 등록)
+let multiSelectMode = false;
+let multiSelectedDates = new Set();
+
 const dowNames = ['일','월','화','수','목','금','토'];
 
 function calAvatarDotsHTML(evs){
@@ -344,19 +372,38 @@ function renderCalendar(){
     const dateStr = `${calYear}-${pad(calMonth+1)}-${pad(d)}`;
     const c = document.createElement('div');
     const milestones = getMilestonesForDate(dateStr);
-    c.className = 'cal-cell' + (dateStr===today?' today':'') + (dateStr===calSelectedDate?' selected':'') + (milestones.length ? ' cal-milestone':'');
+    const isHoliday = !!HOLIDAYS_KR[dateStr];
+    const isMultiChecked = multiSelectMode && multiSelectedDates.has(dateStr);
+    c.className = 'cal-cell' + (dateStr===today?' today':'') + (dateStr===calSelectedDate?' selected':'') + (milestones.length ? ' cal-milestone':'') + (isHoliday ? ' cal-holiday':'') + (isMultiChecked ? ' multi-checked':'');
     const evs = eventsByDate[dateStr] || [];
     const dots = calAvatarDotsHTML(evs);
     const milestoneIcons = [...new Set(milestones.map(m => m.icon))].slice(0, 2).join(''); // 그 날 있는 종류의 아이콘만, 중복 없이
     const milestoneBadge = milestones.length ? `<span class="cal-milestone-badge">${milestoneIcons}</span>` : '';
     c.innerHTML = `<span class="dnum">${d}</span>${milestoneBadge}<div class="dots">${dots}</div>`;
-    c.addEventListener('click', ()=>{ calSelectedDate = dateStr; renderCalendar(); });
+    c.addEventListener('click', ()=>{
+      if(multiSelectMode){
+        if(multiSelectedDates.has(dateStr)) multiSelectedDates.delete(dateStr);
+        else multiSelectedDates.add(dateStr);
+        const cnt = document.getElementById('multiSelectCount');
+        if(cnt) cnt.textContent = `${multiSelectedDates.size}일 선택됨`;
+        renderCalendar();
+      } else {
+        calSelectedDate = dateStr;
+        renderCalendar();
+      }
+    });
     grid.appendChild(c);
   }
 
   document.getElementById('calSelLabel').textContent = `${fmtDateLabel(calSelectedDate)} 일정`;
   const selEvents = (eventsByDate[calSelectedDate] || []).sort((a,b)=>a.time.localeCompare(b.time));
   const selMilestones = getMilestonesForDate(calSelectedDate);
+  const holidayName = HOLIDAYS_KR[calSelectedDate];
+  const holidayHTML = holidayName ? `
+    <div class="event-item milestone-item" style="background:#fff0f0 !important;">
+      <div class="icon-stack"><div class="icon-chip" style="background:#ffe0e0;">🎌</div></div>
+      <div class="etxt"><div class="etitle">${holidayName}</div><div class="emeta">공휴일</div></div>
+    </div>` : '';
   const milestoneHTML = selMilestones.map(m => `
     <div class="event-item milestone-item">
       <div class="icon-stack"><div class="icon-chip" style="background:#ffe1ef;">${m.icon}</div></div>
@@ -364,7 +411,7 @@ function renderCalendar(){
     </div>`).join('');
   const selList = document.getElementById('calSelList');
   const eventsHTML = selEvents.length ? selEvents.map(eventRowHTML).join('') : '';
-  selList.innerHTML = (milestoneHTML + eventsHTML) || `<div class="empty-state">이 날짜엔 일정이 없어요</div>`;
+  selList.innerHTML = (holidayHTML + milestoneHTML + eventsHTML) || `<div class="empty-state">이 날짜엔 일정이 없어요</div>`;
   bindDeleteButtons(selList);
 }
 
@@ -374,7 +421,7 @@ document.getElementById('prevMonth').addEventListener('click', ()=>{
 document.getElementById('nextMonth').addEventListener('click', ()=>{
   calMonth++; if(calMonth>11){ calMonth=0; calYear++; } renderCalendar();
 });
-document.getElementById('todayBtn').addEventListener('click', ()=>{
+document.getElementById('todayBtn')?.addEventListener('click', ()=>{
   const now = new Date();
   calYear = now.getFullYear();
   calMonth = now.getMonth();
@@ -382,20 +429,86 @@ document.getElementById('todayBtn').addEventListener('click', ()=>{
   renderCalendar();
 });
 
-document.getElementById('calAddBtn').addEventListener('click', ()=>{
+document.getElementById('calAddBtn')?.addEventListener('click', ()=>{
   const targetDate = calSelectedDate;
   showTab('add');
   // 혹시 기간 모드가 켜져 있었으면 단일 날짜 모드로 되돌리고 그 날짜를 채워넣어요
   periodMode = false;
-  document.getElementById('periodSwitch').classList.remove('on');
-  document.getElementById('singleDateRow').style.display = 'flex';
-  document.getElementById('periodDateRow').style.display = 'none';
-  document.getElementById('dateInput').value = targetDate;
-  document.getElementById('titleInput').focus();
+  document.getElementById('periodSwitch')?.classList.remove('on');
+  const singleRow = document.getElementById('singleDateRow');
+  const periodRow = document.getElementById('periodDateRow');
+  if(singleRow) singleRow.style.display = 'flex';
+  if(periodRow) periodRow.style.display = 'none';
+  const dateEl = document.getElementById('dateInput');
+  if(dateEl) dateEl.value = targetDate;
+  document.getElementById('titleInput')?.focus();
+});
+
+/* ── 캘린더: 여러 날짜 선택 모드 ───────────────────────────── */
+const multiSelectBtn = document.getElementById('multiSelectBtn');
+const calSelHeader = document.getElementById('calSelHeader');
+const calSelListEl = document.getElementById('calSelList');
+const multiSelectBar = document.getElementById('multiSelectBar');
+
+function exitMultiSelectMode(){
+  multiSelectMode = false;
+  multiSelectedDates.clear();
+  multiSelectBtn?.classList.remove('active');
+  if(calSelHeader) calSelHeader.style.display = 'flex';
+  if(calSelListEl) calSelListEl.style.display = 'block';
+  if(multiSelectBar) multiSelectBar.style.display = 'none';
+}
+
+multiSelectBtn?.addEventListener('click', ()=>{
+  multiSelectMode = !multiSelectMode;
+  multiSelectBtn.classList.toggle('active', multiSelectMode);
+  multiSelectedDates.clear();
+  const cnt = document.getElementById('multiSelectCount');
+  if(cnt) cnt.textContent = '0일 선택됨';
+  if(calSelHeader) calSelHeader.style.display = multiSelectMode ? 'none' : 'flex';
+  if(calSelListEl) calSelListEl.style.display = multiSelectMode ? 'none' : 'block';
+  if(multiSelectBar) multiSelectBar.style.display = multiSelectMode ? 'flex' : 'none';
+  renderCalendar();
+});
+
+document.getElementById('multiCancelBtn')?.addEventListener('click', ()=>{
+  exitMultiSelectMode();
+  renderCalendar();
+});
+
+document.getElementById('multiAddBtn')?.addEventListener('click', ()=>{
+  if(multiSelectedDates.size === 0){ toast('날짜를 하나 이상 선택해주세요'); return; }
+  const dates = [...multiSelectedDates].sort();
+  exitMultiSelectMode();
+  showTab('add');
+  setMultiDatesMode(dates);
 });
 
 /* ── 일정 등록 탭 ──────────────────────────────────────────── */
 let addState = { icon: ICONS[0], cat: CATS[0], selectedWho: [] };
+let addMultiDates = null; // 캘린더에서 "여러 날짜 선택"으로 넘어왔을 때만 배열로 채워짐
+
+function setMultiDatesMode(dates){
+  addMultiDates = dates;
+  document.getElementById('singleDateRow').style.display = 'none';
+  document.getElementById('periodDateRow').style.display = 'none';
+  document.getElementById('multiDatesInfo').style.display = 'block';
+  document.getElementById('multiDatesCount').textContent = dates.length;
+  document.getElementById('multiDatesChips').innerHTML = dates.map(d => `<span class="mdate-chip">${fmtDateLabel(d)}</span>`).join('');
+  periodMode = false;
+  periodSwitch?.classList.remove('on');
+  document.getElementById('titleInput')?.focus();
+}
+
+function exitMultiDatesMode(){
+  addMultiDates = null;
+  document.getElementById('multiDatesInfo').style.display = 'none';
+  document.getElementById('singleDateRow').style.display = 'flex';
+  document.getElementById('periodDateRow').style.display = 'none';
+}
+
+document.getElementById('multiDatesCancelBtn')?.addEventListener('click', exitMultiDatesMode);
+
 
 const iconPicker = document.getElementById('iconPicker');
 ICONS.forEach((ic,i)=>{
@@ -475,20 +588,38 @@ function buildWhoRow(){
 }
 buildWhoRow();
 
-document.getElementById('dateInput').value = todayStr();
-document.getElementById('startDateInput').value = todayStr();
-document.getElementById('endDateInput').value = todayStr();
+// 아래 값들은 index.html이 혹시 캐시 때문에 예전 버전이면 요소가 없을 수 있어요.
+// 그럴 때 여기서 에러가 나면 이 뒤에 있는 모든 초기화 코드(설정 탭, 파트너 연결 등)가
+// 통째로 멈춰버려서, 옵셔널 체이닝(?.)으로 안전하게 처리해요.
+if(document.getElementById('dateInput')) document.getElementById('dateInput').value = todayStr();
+if(document.getElementById('startDateInput')) document.getElementById('startDateInput').value = todayStr();
+if(document.getElementById('endDateInput')) document.getElementById('endDateInput').value = todayStr();
 
 // 기간(연속 일정) 토글
 let periodMode = false;
 const periodSwitch = document.getElementById('periodSwitch');
 const singleDateRow = document.getElementById('singleDateRow');
 const periodDateRow = document.getElementById('periodDateRow');
-periodSwitch.addEventListener('click', ()=>{
+periodSwitch?.addEventListener('click', ()=>{
   periodMode = !periodMode;
   periodSwitch.classList.toggle('on', periodMode);
-  singleDateRow.style.display = periodMode ? 'none' : 'flex';
-  periodDateRow.style.display = periodMode ? 'flex' : 'none';
+  if(periodMode){
+    // 단일 날짜 칸에 이미 골라둔 날짜가 있으면(예: 캘린더에서 넘어온 경우), 그대로 시작일/종료일에도 넣어줘요
+    const dEl = document.getElementById('dateInput');
+    if(dEl?.value){
+      const startEl = document.getElementById('startDateInput');
+      const endEl = document.getElementById('endDateInput');
+      if(startEl) startEl.value = dEl.value;
+      if(endEl) endEl.value = dEl.value;
+    }
+  } else {
+    // 반대로 기간 모드에서 단일 모드로 돌아갈 땐 시작일 값을 그대로 가져와요
+    const startEl = document.getElementById('startDateInput');
+    const dEl = document.getElementById('dateInput');
+    if(startEl?.value && dEl) dEl.value = startEl.value;
+  }
+  if(singleDateRow) singleDateRow.style.display = periodMode ? 'none' : 'flex';
+  if(periodDateRow) periodDateRow.style.display = periodMode ? 'flex' : 'none';
 });
 
 const titleInput = document.getElementById('titleInput');
@@ -501,43 +632,69 @@ saveBtn.addEventListener('click', async ()=>{
   const title = titleInput.value.trim();
   if(!title) return;
 
-  let date, endDate;
-  if(periodMode){
-    date = document.getElementById('startDateInput').value || todayStr();
-    endDate = document.getElementById('endDateInput').value || date;
-    if(endDate < date){ toast('종료일이 시작일보다 빠를 수 없어요'); return; }
+  if(addMultiDates && addMultiDates.length){
+    // 여러 날짜 선택 모드: 같은 내용으로 각 날짜마다 별도 일정을 하나씩 만들어요
+    // (나중에 한 날짜만 골라서 따로 삭제/수정할 수 있게 하기 위해 각각 독립된 일정으로 저장)
+    const time = document.getElementById('multiTimeInput')?.value || '00:00';
+    const memo = document.getElementById('memoInput').value.trim();
+    const who = [...addState.selectedWho];
+    addMultiDates.forEach((d, idx)=>{
+      store.events.push({
+        id: 'ev_' + Date.now() + '_' + idx,
+        title,
+        icon: addState.icon,
+        catKey: addState.cat.key,
+        catColor: addState.cat.color,
+        who,
+        date: d,
+        time,
+        memo,
+      });
+    });
+    await store.save();
+    toast(`${addMultiDates.length}개 날짜에 일정을 저장했어요 🎉`);
+    exitMultiDatesMode();
   } else {
-    date = document.getElementById('dateInput').value || todayStr();
-    endDate = date;
+    let date, endDate;
+    if(periodMode){
+      date = document.getElementById('startDateInput')?.value || todayStr();
+      endDate = document.getElementById('endDateInput')?.value || date;
+      if(endDate < date){ toast('종료일이 시작일보다 빠를 수 없어요'); return; }
+    } else {
+      date = document.getElementById('dateInput').value || todayStr();
+      endDate = date;
+    }
+
+    const newEvent = {
+      id: 'ev_' + Date.now(),
+      title,
+      icon: addState.icon,
+      catKey: addState.cat.key,
+      catColor: addState.cat.color,
+      who: [...addState.selectedWho],
+      date,
+      time: document.getElementById('timeInput').value || '00:00',
+      memo: document.getElementById('memoInput').value.trim(),
+    };
+    if(endDate !== date) newEvent.endDate = endDate; // 하루짜리 일정은 예전이랑 구조 그대로 유지
+
+    store.events.push(newEvent);
+    await store.save();
+
+    periodMode = false;
+    periodSwitch.classList.remove('on');
+    singleDateRow.style.display = 'flex';
+    periodDateRow.style.display = 'none';
+
+    toast('일정을 저장했어요 🎉');
   }
-
-  const newEvent = {
-    id: 'ev_' + Date.now(),
-    title,
-    icon: addState.icon,
-    catKey: addState.cat.key,
-    catColor: addState.cat.color,
-    who: [...addState.selectedWho],
-    date,
-    time: document.getElementById('timeInput').value || '00:00',
-    memo: document.getElementById('memoInput').value.trim(),
-  };
-  if(endDate !== date) newEvent.endDate = endDate; // 하루짜리 일정은 예전이랑 구조 그대로 유지
-
-  store.events.push(newEvent);
-  await store.save();
 
   titleInput.value = '';
   document.getElementById('memoInput').value = '';
   saveBtn.classList.remove('ready');
   addState.selectedWho = []; // 다음 등록 때 다시 기본값(나만)으로
   buildWhoRow();
-  periodMode = false;
-  periodSwitch.classList.remove('on');
-  singleDateRow.style.display = 'flex';
-  periodDateRow.style.display = 'none';
 
-  toast('일정을 저장했어요 🎉');
   showTab('home');
 });
 
