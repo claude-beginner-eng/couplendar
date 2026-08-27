@@ -132,6 +132,11 @@
     box-shadow:0 1px 2px rgba(0,0,0,.18);
   }
   .cal-cell .cal-heart{ font-size:11px; line-height:1; }
+  .cal-cell .cal-work-chip{
+    display:inline-flex; align-items:center; gap:1px; height:11px; max-width:32px; padding:0 3px;
+    border-radius:4px; font-size:6px; color:#fff; font-weight:800; line-height:1;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
   .cal-cell.cal-milestone{ background:#fff0f7; box-shadow:0 0 0 1.4px #ff9fc0 inset; }
   .cal-cell.cal-holiday .dnum{ color:#e0405f; }
   .cal-cell .cal-milestone-badge{ position:absolute; top:1px; right:2px; font-size:9px; }
@@ -148,7 +153,8 @@
   .icon-picker{ display:grid; grid-template-columns:repeat(6,1fr); gap:8px; background:var(--card); border-radius:14px; padding:12px; box-shadow:0 3px 10px rgba(180,140,190,.12); }
   .icon-opt{ aspect-ratio:1/1; border-radius:11px; border:none; background:#faf3f8; font-size:17px; display:flex; align-items:center; justify-content:center; cursor:pointer; }
   .icon-opt.active{ background:var(--accent); box-shadow:0 4px 10px rgba(138,63,174,.35); }
-  .cat-row{ display:flex; gap:8px; }
+  .cat-row{ display:flex; gap:8px; flex-wrap:wrap; }
+  .work-hint{ font-size:10px; color:var(--sub); opacity:.55; margin-top:7px; padding:0 2px; line-height:1.5; }
   .cat-chip{ flex:1; display:flex; flex-direction:column; align-items:center; gap:5px; padding:10px 4px; border-radius:14px; background:var(--card); border:2px solid transparent; cursor:pointer; box-shadow:0 3px 10px rgba(180,140,190,.1); }
   .cat-chip .dot{ width:16px; height:16px; border-radius:50%; }
   .cat-chip span{ font-size:10.5px; font-weight:800; color:var(--sub); }
@@ -319,6 +325,7 @@
     <div class="field-group">
       <div class="field-label">카테고리</div>
       <div class="cat-row" id="catRow"></div>
+      <div class="work-hint" id="workHint" style="display:none;">근무 선택 시, "데이, 나이트, 이브닝, 오프"에 따라서 다른 색상으로 표시됩니다.</div>
     </div>
 
     <div class="field-group" id="whoSection" style="display:none;">

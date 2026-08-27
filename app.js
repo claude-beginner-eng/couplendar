@@ -14,7 +14,7 @@
 // 먹통이 돼요.
 let db = null;
 let firebaseReady = false;
-console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix22 (여러 날짜 선택 등록 기능)', 'color:#8a3fae;font-weight:bold;');
+console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix23 (근무 카테고리 + 교대별 색상)', 'color:#8a3fae;font-weight:bold;');
 try {
   firebase.initializeApp(firebaseConfig);
   db = firebase.firestore();
@@ -114,10 +114,22 @@ const CATS = [
   { key:'date',  label:'데이트', color:'#ff6b9d' },
   { key:'appt',  label:'약속',   color:'#38bdf8' },
   { key:'trip',  label:'여행',   color:'#2dd4bf' },
+  { key:'work',  label:'근무',   color:'#f59e0b' },
   { key:'etc',   label:'기타',   color:'#9b6bff' },
 ];
 const ICONS = ['🍰','✈️','💜','📌','🎂','🎉','🍜','📞','🎬','☕','🎁','🏖️'];
 const AVATAR_ICONS = ['🐻','🐰','🐱','🐶','🦊','🐼','🦁','🐨','🐯','🐥','🦄','🐧'];
+
+// 근무 카테고리에서 이 4가지 이름으로 일정을 등록하면, 이름별로 겹치지 않는 색으로 표시돼요.
+const SHIFT_COLORS = {
+  '데이':   '#f59e0b', // 주황
+  '나이트': '#6366f1', // 남색
+  '이브닝': '#a855f7', // 보라
+  '오프':   '#22c55e', // 초록
+};
+function getEventColor(ev){
+  return (ev.catKey === 'work' && SHIFT_COLORS[ev.title]) ? SHIFT_COLORS[ev.title] : ev.catColor;
+}
 
 // 지금 등록/표시에 쓸 "멤버 목록" — 연결돼 있으면 방(room)의 멤버들,
 // 혼자면 나 하나뿐. 일정마다 "누구 것인지"를 표시할 때 이 목록에서 찾아요.
@@ -203,7 +215,7 @@ function eventRowHTML(ev){
   return `
     <div class="event-item">
       <div class="icon-stack">
-        <div class="icon-chip" style="background:${ev.catColor}">${ev.icon}</div>
+        <div class="icon-chip" style="background:${getEventColor(ev)}">${ev.icon}</div>
         ${avatarGroupHTML(ev.who)}
       </div>
       <div class="etxt">
@@ -263,6 +275,13 @@ const dowNames = ['일','월','화','수','목','금','토'];
 function calAvatarDotsHTML(evs){
   const members = getMemberList();
   const shown = evs.slice(0, 3).map(e=>{
+    if(e.catKey === 'work' && SHIFT_COLORS[e.title]){
+      // 근무 일정: 아바타 아이콘 + 일정 이름(데이/나이트/이브닝/오프)을 그 이름 전용 색상 사각형으로
+      const firstWhoId = e.who && e.who[0];
+      const m = members.find(mm => mm.id === firstWhoId);
+      const avatar = m ? m.avatar : '👤';
+      return `<span class="cal-work-chip" style="background:${SHIFT_COLORS[e.title]}">${avatar}${e.title}</span>`;
+    }
     if(e.who && e.who.length >= 2){
       return `<span class="cal-heart">💗</span>`; // 둘이 함께하는 일정은 분홍 하트로
     }
@@ -524,6 +543,7 @@ ICONS.forEach((ic,i)=>{
 });
 
 const catRow = document.getElementById('catRow');
+const workHint = document.getElementById('workHint');
 CATS.forEach((c,i)=>{
   const el = document.createElement('div');
   el.className = 'cat-chip' + (i===0?' active':'');
@@ -533,6 +553,7 @@ CATS.forEach((c,i)=>{
     catRow.querySelectorAll('.cat-chip').forEach(x=>x.classList.remove('active'));
     el.classList.add('active');
     addState.cat = c;
+    if(workHint) workHint.style.display = (c.key === 'work') ? 'block' : 'none';
   });
   catRow.appendChild(el);
 });
