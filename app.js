@@ -14,7 +14,7 @@
 // 먹통이 돼요.
 let db = null;
 let firebaseReady = false;
-console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix23 (근무 카테고리 + 교대별 색상)', 'color:#8a3fae;font-weight:bold;');
+console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix24 (공휴일별 어울리는 이모지로 교체)', 'color:#8a3fae;font-weight:bold;');
 try {
   firebase.initializeApp(firebaseConfig);
   db = firebase.firestore();
@@ -88,26 +88,26 @@ store.loadLocal();
 
 // 2026년 대한민국 공휴일 (대체공휴일 포함). 필요하면 나중에 다른 연도도 추가 가능해요.
 const HOLIDAYS_KR = {
-  '2026-01-01': '신정',
-  '2026-02-16': '설날 연휴',
-  '2026-02-17': '설날',
-  '2026-02-18': '설날 연휴',
-  '2026-03-01': '삼일절',
-  '2026-03-02': '삼일절 대체공휴일',
-  '2026-05-05': '어린이날',
-  '2026-05-24': '부처님오신날',
-  '2026-05-25': '부처님오신날 대체공휴일',
-  '2026-06-06': '현충일',
-  '2026-07-17': '제헌절',
-  '2026-08-15': '광복절',
-  '2026-08-17': '광복절 대체공휴일',
-  '2026-09-24': '추석 연휴',
-  '2026-09-25': '추석',
-  '2026-09-26': '추석 연휴',
-  '2026-10-03': '개천절',
-  '2026-10-05': '개천절 대체공휴일',
-  '2026-10-09': '한글날',
-  '2026-12-25': '크리스마스',
+  '2026-01-01': { name:'신정', icon:'🎉' },
+  '2026-02-16': { name:'설날 연휴', icon:'🧧' },
+  '2026-02-17': { name:'설날', icon:'🧧' },
+  '2026-02-18': { name:'설날 연휴', icon:'🧧' },
+  '2026-03-01': { name:'삼일절', icon:'🇰🇷' },
+  '2026-03-02': { name:'삼일절 대체공휴일', icon:'🇰🇷' },
+  '2026-05-05': { name:'어린이날', icon:'🎈' },
+  '2026-05-24': { name:'부처님오신날', icon:'🪷' },
+  '2026-05-25': { name:'부처님오신날 대체공휴일', icon:'🪷' },
+  '2026-06-06': { name:'현충일', icon:'🕯️' },
+  '2026-07-17': { name:'제헌절', icon:'📜' },
+  '2026-08-15': { name:'광복절', icon:'🇰🇷' },
+  '2026-08-17': { name:'광복절 대체공휴일', icon:'🇰🇷' },
+  '2026-09-24': { name:'추석 연휴', icon:'🌕' },
+  '2026-09-25': { name:'추석', icon:'🌕' },
+  '2026-09-26': { name:'추석 연휴', icon:'🌕' },
+  '2026-10-03': { name:'개천절', icon:'🇰🇷' },
+  '2026-10-05': { name:'개천절 대체공휴일', icon:'🇰🇷' },
+  '2026-10-09': { name:'한글날', icon:'🇰🇷' },
+  '2026-12-25': { name:'크리스마스', icon:'🎄' },
 };
 
 const CATS = [
@@ -417,11 +417,11 @@ function renderCalendar(){
   document.getElementById('calSelLabel').textContent = `${fmtDateLabel(calSelectedDate)} 일정`;
   const selEvents = (eventsByDate[calSelectedDate] || []).sort((a,b)=>a.time.localeCompare(b.time));
   const selMilestones = getMilestonesForDate(calSelectedDate);
-  const holidayName = HOLIDAYS_KR[calSelectedDate];
-  const holidayHTML = holidayName ? `
+  const holiday = HOLIDAYS_KR[calSelectedDate];
+  const holidayHTML = holiday ? `
     <div class="event-item milestone-item" style="background:#fff0f0 !important;">
-      <div class="icon-stack"><div class="icon-chip" style="background:#ffe0e0;">🎌</div></div>
-      <div class="etxt"><div class="etitle">${holidayName}</div><div class="emeta">공휴일</div></div>
+      <div class="icon-stack"><div class="icon-chip" style="background:#ffe0e0;">${holiday.icon}</div></div>
+      <div class="etxt"><div class="etitle">${holiday.name}</div><div class="emeta">공휴일</div></div>
     </div>` : '';
   const milestoneHTML = selMilestones.map(m => `
     <div class="event-item milestone-item">
