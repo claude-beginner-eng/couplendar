@@ -14,7 +14,7 @@
 // 먹통이 돼요.
 let db = null;
 let firebaseReady = false;
-console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix24 (공휴일별 어울리는 이모지로 교체)', 'color:#8a3fae;font-weight:bold;');
+console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix26 (직접 그린 태극기 아이콘)', 'color:#8a3fae;font-weight:bold;');
 try {
   firebase.initializeApp(firebaseConfig);
   db = firebase.firestore();
@@ -87,26 +87,44 @@ const store = {
 store.loadLocal();
 
 // 2026년 대한민국 공휴일 (대체공휴일 포함). 필요하면 나중에 다른 연도도 추가 가능해요.
+// 🇰🇷 이모지는 유니코드상 태극기가 맞지만, 기기/폰트에 따라 태극 문양 없이
+// 글자로만 보이는 경우가 있어서 직접 작게 그려서 확실하게 보이도록 했어요.
+const KR_FLAG_SVG = '<svg width="1em" height="0.72em" viewBox="0 0 24 16" style="vertical-align:-0.05em;" aria-hidden="true">'
+  + '<rect x="0.3" y="0.3" width="23.4" height="15.4" fill="#ffffff" stroke="#dcdcdc" stroke-width="0.4"/>'
+  + '<circle cx="12" cy="8" r="3.6" fill="#ffffff"/>'
+  + '<path d="M12 4.4 A3.6 3.6 0 0 1 12 11.6 A1.8 1.8 0 0 1 12 8 A1.8 1.8 0 0 0 12 4.4 Z" fill="#c60c30"/>'
+  + '<path d="M12 11.6 A3.6 3.6 0 0 1 12 4.4 A1.8 1.8 0 0 1 12 8 A1.8 1.8 0 0 0 12 11.6 Z" fill="#003478"/>'
+  + '<g stroke="#000" stroke-width="0.6" stroke-linecap="square">'
+  + '<line x1="3" y1="3.1" x2="6.2" y2="3.1"/><line x1="3" y1="4.1" x2="6.2" y2="4.1"/><line x1="3" y1="5.1" x2="6.2" y2="5.1"/>'
+  + '<line x1="17.8" y1="10.9" x2="21" y2="10.9"/><line x1="17.8" y1="12.9" x2="21" y2="12.9"/>'
+  + '<line x1="3" y1="10.9" x2="4.7" y2="10.9"/><line x1="5.3" y1="10.9" x2="7" y2="10.9"/>'
+  + '<line x1="3" y1="11.9" x2="7" y2="11.9"/>'
+  + '<line x1="3" y1="12.9" x2="4.7" y2="12.9"/><line x1="5.3" y1="12.9" x2="7" y2="12.9"/>'
+  + '<line x1="17.8" y1="3.1" x2="21" y2="3.1"/>'
+  + '<line x1="17.8" y1="4.1" x2="19.5" y2="4.1"/><line x1="20.1" y1="4.1" x2="21" y2="4.1"/>'
+  + '<line x1="17.8" y1="5.1" x2="21" y2="5.1"/>'
+  + '</g></svg>';
+
 const HOLIDAYS_KR = {
   '2026-01-01': { name:'신정', icon:'🎉' },
   '2026-02-16': { name:'설날 연휴', icon:'🧧' },
   '2026-02-17': { name:'설날', icon:'🧧' },
   '2026-02-18': { name:'설날 연휴', icon:'🧧' },
-  '2026-03-01': { name:'삼일절', icon:'🇰🇷' },
-  '2026-03-02': { name:'삼일절 대체공휴일', icon:'🇰🇷' },
+  '2026-03-01': { name:'삼일절', icon: KR_FLAG_SVG },
+  '2026-03-02': { name:'삼일절 대체공휴일', icon: KR_FLAG_SVG },
   '2026-05-05': { name:'어린이날', icon:'🎈' },
-  '2026-05-24': { name:'부처님오신날', icon:'🪷' },
-  '2026-05-25': { name:'부처님오신날 대체공휴일', icon:'🪷' },
+  '2026-05-24': { name:'부처님오신날', icon:'🏮' },
+  '2026-05-25': { name:'부처님오신날 대체공휴일', icon:'🏮' },
   '2026-06-06': { name:'현충일', icon:'🕯️' },
   '2026-07-17': { name:'제헌절', icon:'📜' },
-  '2026-08-15': { name:'광복절', icon:'🇰🇷' },
-  '2026-08-17': { name:'광복절 대체공휴일', icon:'🇰🇷' },
+  '2026-08-15': { name:'광복절', icon: KR_FLAG_SVG },
+  '2026-08-17': { name:'광복절 대체공휴일', icon: KR_FLAG_SVG },
   '2026-09-24': { name:'추석 연휴', icon:'🌕' },
   '2026-09-25': { name:'추석', icon:'🌕' },
   '2026-09-26': { name:'추석 연휴', icon:'🌕' },
-  '2026-10-03': { name:'개천절', icon:'🇰🇷' },
-  '2026-10-05': { name:'개천절 대체공휴일', icon:'🇰🇷' },
-  '2026-10-09': { name:'한글날', icon:'🇰🇷' },
+  '2026-10-03': { name:'개천절', icon: KR_FLAG_SVG },
+  '2026-10-05': { name:'개천절 대체공휴일', icon: KR_FLAG_SVG },
+  '2026-10-09': { name:'한글날', icon: KR_FLAG_SVG },
   '2026-12-25': { name:'크리스마스', icon:'🎄' },
 };
 
