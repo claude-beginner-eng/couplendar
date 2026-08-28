@@ -14,7 +14,7 @@
 // 먹통이 돼요.
 let db = null;
 let firebaseReady = false;
-console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix28 (실제 태극기 이미지로 교체, flagcdn.com)', 'color:#8a3fae;font-weight:bold;');
+console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix30 (테트리스 격자/고스트/가속 + 실시간 대결모드)', 'color:#8a3fae;font-weight:bold;');
 try {
   firebase.initializeApp(firebaseConfig);
   db = firebase.firestore();
@@ -194,6 +194,7 @@ function showTab(name){
   if(name === 'calendar') renderCalendar();
   if(name === 'home') renderHome();
   if(name === 'add') buildWhoRow(); // 멤버가 바뀌었을 수 있으니 등록 탭 들어갈 때마다 갱신
+  if(name === 'game' && typeof renderTetrisLeaderboard === 'function') renderTetrisLeaderboard();
 }
 tabBtns.forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
 
@@ -1240,6 +1241,8 @@ function connectToRoomListener(code){
     if(document.getElementById('tab-calendar').classList.contains('active')) renderCalendar();
     renderSettingsRoomStatus();
     buildWhoRow(); // 멤버 정보가 방금 도착했으니, 등록 탭의 "누구 일정" 목록도 다시 그려야 함
+    if(typeof renderTetrisLeaderboard === 'function') renderTetrisLeaderboard(); // 파트너 점수도 실시간으로 반영
+    if(typeof tetrisHandleMatchUpdate === 'function') tetrisHandleMatchUpdate(); // 대결 초대/자동시작/실시간 HUD
   }, err=>{
     console.warn('실시간 동기화 오류:', err);
     toast('실시간 동기화 중 문제가 발생했어요');
@@ -1247,6 +1250,646 @@ function connectToRoomListener(code){
 }
 
 /* ── 초기화 ────────────────────────────────────────────────── */
+/* ============================================================
+   테트리스 미니게임
+   ------------------------------------------------------------
+   1단계: 각자 플레이하고 점수판으로 경쟁 (지금 만드는 버전)
+   2단계(추후): 실시간 대결 모드
+   ============================================================ */
+const TETRIS_COLS = 10, TETRIS_ROWS = 20, TETRIS_CELL = 22;
+
+const TETRIS_SHAPES = {
+  I: [
+    [[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]],
+    [[0,0,1,0],[0,0,1,0],[0,0,1,0],[0,0,1,0]],
+    [[0,0,0,0],[0,0,0,0],[1,1,1,1],[0,0,0,0]],
+    [[0,1,0,0],[0,1,0,0],[0,1,0,0],[0,1,0,0]],
+  ],
+  O: [
+    [[1,1],[1,1]],
+    [[1,1],[1,1]],
+    [[1,1],[1,1]],
+    [[1,1],[1,1]],
+  ],
+  T: [
+    [[0,1,0],[1,1,1],[0,0,0]],
+    [[0,1,0],[0,1,1],[0,1,0]],
+    [[0,0,0],[1,1,1],[0,1,0]],
+    [[0,1,0],[1,1,0],[0,1,0]],
+  ],
+  S: [
+    [[0,1,1],[1,1,0],[0,0,0]],
+    [[0,1,0],[0,1,1],[0,0,1]],
+    [[0,0,0],[0,1,1],[1,1,0]],
+    [[1,0,0],[1,1,0],[0,1,0]],
+  ],
+  Z: [
+    [[1,1,0],[0,1,1],[0,0,0]],
+    [[0,0,1],[0,1,1],[0,1,0]],
+    [[0,0,0],[1,1,0],[0,1,1]],
+    [[0,1,0],[1,1,0],[1,0,0]],
+  ],
+  J: [
+    [[1,0,0],[1,1,1],[0,0,0]],
+    [[0,1,1],[0,1,0],[0,1,0]],
+    [[0,0,0],[1,1,1],[0,0,1]],
+    [[0,1,0],[0,1,0],[1,1,0]],
+  ],
+  L: [
+    [[0,0,1],[1,1,1],[0,0,0]],
+    [[0,1,0],[0,1,0],[0,1,1]],
+    [[0,0,0],[1,1,1],[1,0,0]],
+    [[1,1,0],[0,1,0],[0,1,0]],
+  ],
+};
+const TETRIS_COLORS = { I:'#22d3ee', O:'#fbbf24', T:'#a78bfa', S:'#4ade80', Z:'#f87171', J:'#60a5fa', L:'#fb923c' };
+const TETRIS_TYPES = Object.keys(TETRIS_SHAPES);
+
+let tetrisState = null;
+let tetrisLoopId = null;
+let tetrisLastDrop = 0;
+
+function tetrisEmptyBoard(){
+  return Array.from({length: TETRIS_ROWS}, () => Array(TETRIS_COLS).fill(0));
+}
+function tetrisBag(){
+  const arr = [...TETRIS_TYPES];
+  for(let i=arr.length-1; i>0; i--){
+    const j = Math.floor(Math.random()*(i+1));
+    [arr[i],arr[j]] = [arr[j],arr[i]];
+  }
+  return arr;
+}
+function tetrisNewPiece(type){
+  const shape = TETRIS_SHAPES[type][0];
+  const w = shape[0].length;
+  return { type, rotation:0, x: Math.floor((TETRIS_COLS - w)/2), y: 0 };
+}
+function tetrisGetShape(piece){ return TETRIS_SHAPES[piece.type][piece.rotation]; }
+
+function tetrisCollide(board, piece, dx=0, dy=0, rotation=null){
+  const shape = TETRIS_SHAPES[piece.type][rotation===null ? piece.rotation : rotation];
+  for(let r=0; r<shape.length; r++){
+    for(let c=0; c<shape[r].length; c++){
+      if(!shape[r][c]) continue;
+      const nx = piece.x + c + dx;
+      const ny = piece.y + r + dy;
+      if(nx<0 || nx>=TETRIS_COLS || ny>=TETRIS_ROWS) return true;
+      if(ny>=0 && board[ny][nx]) return true;
+    }
+  }
+  return false;
+}
+
+function tetrisSpawnNext(){
+  const st = tetrisState;
+  if(st.queue.length < 2) st.queue.push(...tetrisBag());
+  const type = st.queue.shift();
+  st.piece = tetrisNewPiece(type);
+  if(tetrisCollide(st.board, st.piece)){
+    tetrisGameOver();
+  }
+}
+
+function tetrisLock(){
+  const st = tetrisState;
+  const shape = tetrisGetShape(st.piece);
+  for(let r=0; r<shape.length; r++){
+    for(let c=0; c<shape[r].length; c++){
+      if(!shape[r][c]) continue;
+      const nx = st.piece.x+c, ny = st.piece.y+r;
+      if(ny>=0) st.board[ny][nx] = st.piece.type;
+    }
+  }
+  let cleared = 0;
+  for(let r=TETRIS_ROWS-1; r>=0; r--){
+    if(st.board[r].every(cell=>cell)){
+      st.board.splice(r,1);
+      st.board.unshift(Array(TETRIS_COLS).fill(0));
+      cleared++;
+      r++;
+    }
+  }
+  if(cleared > 0){
+    const pointsTable = [0,100,300,500,800];
+    st.score += (pointsTable[cleared] || 800) * st.level;
+    st.lines += cleared;
+    st.level = Math.floor(st.lines/10) + 1;
+    if(st.versus) tetrisVersusSyncScore(); // 조각 놓을 때마다(줄 지웠을 때) 파트너 화면에 실시간 반영
+  }
+  if(!st.gameOver) tetrisSpawnNext();
+}
+
+function tetrisGhostY(){
+  const st = tetrisState;
+  let dy = 0;
+  while(!tetrisCollide(st.board, st.piece, 0, dy+1)) dy++;
+  return st.piece.y + dy;
+}
+
+function tetrisRender(){
+  const st = tetrisState;
+  const canvas = document.getElementById('tetrisCanvas');
+  if(!canvas || !st) return;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0,0,canvas.width, canvas.height);
+
+  // 격자선
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctx.lineWidth = 1;
+  for(let c=0; c<=TETRIS_COLS; c++){
+    ctx.beginPath(); ctx.moveTo(c*TETRIS_CELL+0.5, 0); ctx.lineTo(c*TETRIS_CELL+0.5, TETRIS_ROWS*TETRIS_CELL); ctx.stroke();
+  }
+  for(let r=0; r<=TETRIS_ROWS; r++){
+    ctx.beginPath(); ctx.moveTo(0, r*TETRIS_CELL+0.5); ctx.lineTo(TETRIS_COLS*TETRIS_CELL, r*TETRIS_CELL+0.5); ctx.stroke();
+  }
+
+  for(let r=0; r<TETRIS_ROWS; r++){
+    for(let c=0; c<TETRIS_COLS; c++){
+      const v = st.board[r][c];
+      if(v){
+        ctx.fillStyle = TETRIS_COLORS[v];
+        ctx.fillRect(c*TETRIS_CELL, r*TETRIS_CELL, TETRIS_CELL-1, TETRIS_CELL-1);
+      }
+    }
+  }
+
+  // 고스트(예상 착지 위치) - 반투명
+  const ghostY = tetrisGhostY();
+  const shape = tetrisGetShape(st.piece);
+  ctx.globalAlpha = 0.25;
+  ctx.fillStyle = TETRIS_COLORS[st.piece.type];
+  for(let r=0; r<shape.length; r++){
+    for(let c=0; c<shape[r].length; c++){
+      if(!shape[r][c]) continue;
+      const y = ghostY + r;
+      if(y<0) continue;
+      ctx.fillRect((st.piece.x+c)*TETRIS_CELL, y*TETRIS_CELL, TETRIS_CELL-1, TETRIS_CELL-1);
+    }
+  }
+  ctx.globalAlpha = 1;
+
+  ctx.fillStyle = TETRIS_COLORS[st.piece.type];
+  for(let r=0; r<shape.length; r++){
+    for(let c=0; c<shape[r].length; c++){
+      if(!shape[r][c]) continue;
+      const y = st.piece.y+r;
+      if(y<0) continue;
+      ctx.fillRect((st.piece.x+c)*TETRIS_CELL, y*TETRIS_CELL, TETRIS_CELL-1, TETRIS_CELL-1);
+    }
+  }
+  const scoreEl = document.getElementById('tetrisScore');
+  const levelEl = document.getElementById('tetrisLevel');
+  const linesEl = document.getElementById('tetrisLines');
+  if(scoreEl) scoreEl.textContent = st.score;
+  if(levelEl) levelEl.textContent = st.level;
+  if(linesEl) linesEl.textContent = st.lines;
+
+  const nextCanvas = document.getElementById('tetrisNextCanvas');
+  if(nextCanvas){
+    const nctx = nextCanvas.getContext('2d');
+    nctx.clearRect(0,0,nextCanvas.width,nextCanvas.height);
+    const nextType = st.queue[0];
+    const nshape = TETRIS_SHAPES[nextType][0];
+    nctx.fillStyle = TETRIS_COLORS[nextType];
+    const cell = 14;
+    const offX = (4-nshape[0].length)/2, offY = (4-nshape.length)/2;
+    for(let r=0; r<nshape.length; r++){
+      for(let c=0; c<nshape[r].length; c++){
+        if(nshape[r][c]) nctx.fillRect((c+offX)*cell, (r+offY)*cell, cell-1, cell-1);
+      }
+    }
+  }
+}
+
+function tetrisLoop(timestamp){
+  const st = tetrisState;
+  if(!st || st.paused || st.gameOver) return;
+  if(!tetrisLastDrop) tetrisLastDrop = timestamp;
+  // 레벨(라인 수)이 올라가도 빨라지고, 같은 레벨이어도 시간이 갈수록(10초마다 10ms씩) 조금씩 더 빨라져요
+  const elapsedSec = (timestamp - st.startTs) / 1000;
+  const timeSpeedup = Math.floor(elapsedSec / 10) * 10;
+  const interval = Math.max(100, 800 - (st.level-1)*60 - timeSpeedup);
+  if(timestamp - tetrisLastDrop > interval){
+    tetrisDrop();
+    tetrisLastDrop = timestamp;
+  }
+  tetrisRender();
+  tetrisLoopId = requestAnimationFrame(tetrisLoop);
+}
+
+function tetrisDrop(){
+  const st = tetrisState;
+  if(!tetrisCollide(st.board, st.piece, 0, 1)){
+    st.piece.y++;
+  } else {
+    tetrisLock();
+  }
+}
+function tetrisMove(dx){
+  const st = tetrisState;
+  if(!st || st.paused || st.gameOver) return;
+  if(!tetrisCollide(st.board, st.piece, dx, 0)) st.piece.x += dx;
+  tetrisRender();
+}
+function tetrisRotate(){
+  const st = tetrisState;
+  if(!st || st.paused || st.gameOver) return;
+  const newRot = (st.piece.rotation+1) % TETRIS_SHAPES[st.piece.type].length;
+  if(!tetrisCollide(st.board, st.piece, 0, 0, newRot)) st.piece.rotation = newRot;
+  tetrisRender();
+}
+function tetrisHardDrop(){
+  const st = tetrisState;
+  if(!st || st.paused || st.gameOver) return;
+  while(!tetrisCollide(st.board, st.piece, 0, 1)) st.piece.y++;
+  tetrisLock();
+  tetrisRender();
+}
+function tetrisSoftDrop(){
+  const st = tetrisState;
+  if(!st || st.paused || st.gameOver) return;
+  tetrisDrop();
+  tetrisRender();
+}
+
+async function tetrisGameOver(){
+  tetrisState.gameOver = true;
+  cancelAnimationFrame(tetrisLoopId);
+  const scoreEl = document.getElementById('tetrisGameOverScore');
+  if(scoreEl) scoreEl.textContent = tetrisState.score;
+  const overlay = document.getElementById('tetrisGameOverOverlay');
+  const titleEl = document.getElementById('tetrisGameOverTitle');
+  if(titleEl) titleEl.textContent = '게임 오버';
+  if(overlay) overlay.style.display = 'flex';
+
+  if(tetrisState.versus){
+    await tetrisVersusReportDeath();
+  }
+  await tetrisSaveScore(tetrisState.score);
+}
+
+function tetrisStart(opts){
+  const versus = !!(opts && opts.versus);
+  tetrisState = { board: tetrisEmptyBoard(), queue: tetrisBag(), score:0, level:1, lines:0, paused:false, gameOver:false, startTs: performance.now(), versus };
+  tetrisSpawnNext();
+  tetrisLastDrop = 0;
+  const startEl = document.getElementById('tetrisStartScreen');
+  const lobbyEl = document.getElementById('tetrisVersusLobby');
+  const playEl = document.getElementById('tetrisPlayScreen');
+  const overEl = document.getElementById('tetrisGameOverOverlay');
+  if(startEl) startEl.style.display = 'none';
+  if(lobbyEl) lobbyEl.style.display = 'none';
+  if(playEl) playEl.style.display = 'block';
+  if(overEl) overEl.style.display = 'none';
+  const vsResultEl = document.getElementById('tgcVsResult');
+  if(vsResultEl) vsResultEl.style.display = 'none';
+  const pauseBtn = document.getElementById('tetrisPauseBtn');
+  if(pauseBtn) pauseBtn.textContent = '⏸';
+  const hud = document.getElementById('tetrisVsHud');
+  if(hud) hud.style.display = versus ? 'flex' : 'none';
+  if(versus) tetrisVersusRenderHud();
+  cancelAnimationFrame(tetrisLoopId);
+  tetrisLoopId = requestAnimationFrame(tetrisLoop);
+}
+
+function tetrisQuit(){
+  cancelAnimationFrame(tetrisLoopId);
+  // 대결 도중에 그만두면 기권패 처리 (아직 안 끝난 대결이었을 때만)
+  if(tetrisState && tetrisState.versus && !tetrisState.gameOver){
+    tetrisVersusReportDeath();
+  }
+  tetrisState = null;
+  const startEl = document.getElementById('tetrisStartScreen');
+  const playEl = document.getElementById('tetrisPlayScreen');
+  if(playEl) playEl.style.display = 'none';
+  if(startEl) startEl.style.display = 'block';
+  renderTetrisLeaderboard();
+}
+
+/* ── 테트리스 대결(2단계): Firestore로 점수/생존 상태를 실시간 동기화 ── */
+
+function tetrisMyVersusKey(){
+  const match = store.room && store.room.tetrisMatch;
+  const roomInfo = store.getRoomInfo();
+  if(!match || !roomInfo) return null;
+  if(match.hostId === roomInfo.myId) return 'host';
+  if(match.guestId === roomInfo.myId) return 'guest';
+  return null;
+}
+function tetrisOtherVersusKey(){
+  const k = tetrisMyVersusKey();
+  return k === 'host' ? 'guest' : (k === 'guest' ? 'host' : null);
+}
+
+document.getElementById('tetrisVersusOpenBtn')?.addEventListener('click', ()=>{
+  document.getElementById('tetrisStartScreen').style.display = 'none';
+  document.getElementById('tetrisVersusLobby').style.display = 'block';
+  renderVersusLobby();
+});
+document.getElementById('tetrisVersusCloseBtn')?.addEventListener('click', ()=>{
+  document.getElementById('tetrisVersusLobby').style.display = 'none';
+  document.getElementById('tetrisStartScreen').style.display = 'block';
+});
+
+function renderVersusLobby(){
+  const body = document.getElementById('tetrisVersusLobbyBody');
+  if(!body) return;
+  const match = store.room && store.room.tetrisMatch;
+  const roomInfo = store.getRoomInfo();
+  const members = getMemberList();
+  const me = members.find(m => roomInfo && m.id === roomInfo.myId) || { name: store.profile.name, avatar: store.profile.avatar };
+  const partner = members.find(m => roomInfo && m.id !== roomInfo.myId);
+
+  if(!match || match.status === 'finished' || match.status === 'cancelled'){
+    body.innerHTML = `
+      <div class="vs-lobby-title">파트너와 한판 붙어볼까요?</div>
+      <div class="vs-lobby-avatars"><span class="va">${me.avatar}</span><span class="vs-lobby-vs">VS</span><span class="va">${partner ? partner.avatar : '❔'}</span></div>
+      <div class="vs-lobby-desc">신청하면 파트너 화면에 알림처럼 떠요. 수락하면 둘 다 동시에 게임이 시작돼요.</div>
+      <button class="save-btn ready" id="tetrisVersusInviteBtn">대결 신청하기</button>`;
+    document.getElementById('tetrisVersusInviteBtn')?.addEventListener('click', tetrisVersusInvite);
+    return;
+  }
+
+  if(match.status === 'waiting'){
+    const isHost = match.hostId === (roomInfo && roomInfo.myId);
+    if(isHost){
+      body.innerHTML = `
+        <div class="vs-lobby-title">대결 신청 완료!</div>
+        <div class="vs-lobby-avatars"><span class="va">${match.hostAvatar}</span><span class="vs-lobby-vs">VS</span><span class="va">${partner ? partner.avatar : '❔'}</span></div>
+        <div class="vs-lobby-desc">파트너가 수락하면 자동으로 게임이 시작돼요. 잠시만 기다려주세요 ⏳</div>
+        <button class="tetris-quit-btn" id="tetrisVersusCancelBtn" style="width:100%;">신청 취소하기</button>`;
+      document.getElementById('tetrisVersusCancelBtn')?.addEventListener('click', tetrisVersusCancel);
+    } else {
+      body.innerHTML = `
+        <div class="vs-lobby-title">${match.hostName}님이 대결을 신청했어요!</div>
+        <div class="vs-lobby-avatars"><span class="va">${match.hostAvatar}</span><span class="vs-lobby-vs">VS</span><span class="va">${me.avatar}</span></div>
+        <button class="save-btn ready" id="tetrisVersusAcceptBtn">수락하기</button>
+        <button class="tetris-quit-btn" id="tetrisVersusDeclineBtn" style="width:100%; margin-top:6px;">거절하기</button>`;
+      document.getElementById('tetrisVersusAcceptBtn')?.addEventListener('click', tetrisVersusAccept);
+      document.getElementById('tetrisVersusDeclineBtn')?.addEventListener('click', tetrisVersusCancel);
+    }
+    return;
+  }
+
+  if(match.status === 'playing'){
+    body.innerHTML = `
+      <div class="vs-lobby-title">대결이 진행 중이에요!</div>
+      <button class="save-btn ready" id="tetrisVersusRejoinBtn">게임 화면으로 가기</button>`;
+    document.getElementById('tetrisVersusRejoinBtn')?.addEventListener('click', ()=>{
+      document.getElementById('tetrisVersusLobby').style.display = 'none';
+      tetrisStart({ versus:true });
+    });
+  }
+}
+
+async function tetrisVersusInvite(){
+  const roomInfo = store.getRoomInfo();
+  if(!roomInfo || !firebaseReady) return;
+  try {
+    await db.collection('rooms').doc(roomInfo.code).update({
+      tetrisMatch: {
+        status:'waiting',
+        hostId: roomInfo.myId, hostName: store.profile.name || '나', hostAvatar: store.profile.avatar || '🐻',
+        guestId: null, guestName: null, guestAvatar: null,
+        hostScore:0, guestScore:0, hostLines:0, guestLines:0, hostAlive:true, guestAlive:true,
+        winnerId:null, startedAt:null, finishedAt:null,
+      }
+    });
+  } catch(e){ console.warn('대결 신청 실패:', e); toast('대결 신청에 실패했어요'); }
+}
+async function tetrisVersusAccept(){
+  const roomInfo = store.getRoomInfo();
+  if(!roomInfo || !firebaseReady || !store.room || !store.room.tetrisMatch) return;
+  try {
+    const current = store.room.tetrisMatch;
+    await db.collection('rooms').doc(roomInfo.code).update({
+      tetrisMatch: {
+        ...current,
+        guestId: roomInfo.myId, guestName: store.profile.name || '나', guestAvatar: store.profile.avatar || '🐰',
+        status:'playing', startedAt: Date.now(),
+        hostScore:0, guestScore:0, hostLines:0, guestLines:0, hostAlive:true, guestAlive:true, winnerId:null,
+      }
+    });
+  } catch(e){ console.warn('대결 수락 실패:', e); toast('대결 수락에 실패했어요'); }
+}
+async function tetrisVersusCancel(){
+  const roomInfo = store.getRoomInfo();
+  if(!roomInfo || !firebaseReady) return;
+  try {
+    await db.collection('rooms').doc(roomInfo.code).update({ tetrisMatch: null });
+  } catch(e){ console.warn('대결 취소 실패:', e); }
+  document.getElementById('tetrisVersusLobby').style.display = 'none';
+  document.getElementById('tetrisStartScreen').style.display = 'block';
+}
+
+async function tetrisVersusSyncScore(){
+  const roomInfo = store.getRoomInfo();
+  const key = tetrisMyVersusKey();
+  if(!roomInfo || !firebaseReady || !key || !tetrisState) return;
+  try {
+    const patch = {};
+    patch[`tetrisMatch.${key}Score`] = tetrisState.score;
+    patch[`tetrisMatch.${key}Lines`] = tetrisState.lines;
+    await db.collection('rooms').doc(roomInfo.code).update(patch);
+  } catch(e){ console.warn('대결 점수 동기화 실패:', e); }
+}
+
+async function tetrisVersusReportDeath(){
+  const roomInfo = store.getRoomInfo();
+  const key = tetrisMyVersusKey();
+  const otherKey = tetrisOtherVersusKey();
+  if(!roomInfo || !firebaseReady || !key) return;
+  try {
+    const ref = db.collection('rooms').doc(roomInfo.code);
+    const snap = await ref.get();
+    if(!snap.exists) return;
+    const match = snap.data().tetrisMatch;
+    if(!match || match.status !== 'playing') return; // 이미 끝난 대결이면 아무것도 안 함
+    const patch = {};
+    patch[`tetrisMatch.${key}Score`] = tetrisState.score;
+    patch[`tetrisMatch.${key}Lines`] = tetrisState.lines;
+    patch[`tetrisMatch.${key}Alive`] = false;
+    patch['tetrisMatch.status'] = 'finished';
+    patch['tetrisMatch.winnerId'] = otherKey === 'host' ? match.hostId : match.guestId;
+    patch['tetrisMatch.finishedAt'] = Date.now();
+    await ref.update(patch);
+  } catch(e){ console.warn('대결 결과 기록 실패:', e); }
+}
+
+// Firestore에서 방 데이터가 갱신될 때마다(onSnapshot) 호출됨 — 대결 초대 감지, 자동 시작, 실시간 점수판 갱신
+function tetrisHandleMatchUpdate(){
+  const match = store.room && store.room.tetrisMatch;
+  const roomInfo = store.getRoomInfo();
+  if(!match || !roomInfo) return;
+  const iAmParticipant = match.hostId === roomInfo.myId || match.guestId === roomInfo.myId;
+
+  // 로비가 열려있으면 최신 상태로 다시 그림 (초대 도착, 상대 수락 등)
+  if(document.getElementById('tetrisVersusLobby')?.style.display !== 'none'){
+    renderVersusLobby();
+  }
+
+  // 상대가 방금 수락해서 status가 playing으로 바뀐 순간 -> 내 로컬 게임 자동 시작
+  if(match.status === 'playing' && iAmParticipant && (!tetrisState || !tetrisState.versus)){
+    document.getElementById('tetrisVersusLobby').style.display = 'none';
+    document.getElementById('tetrisStartScreen').style.display = 'none';
+    tetrisStart({ versus:true });
+  }
+
+  // 대결 중 상대방 점수/생존 상태 실시간 HUD 갱신
+  if(tetrisState && tetrisState.versus && iAmParticipant){
+    tetrisVersusRenderHud();
+    // 상대가 먼저 끝나서 대결이 끝났는데, 나는 아직 살아서 계속 플레이 중이면 -> 내 게임도 종료
+    if(match.status === 'finished' && !tetrisState.gameOver){
+      tetrisGameOver();
+    }
+  }
+}
+
+function tetrisVersusRenderHud(){
+  const match = store.room && store.room.tetrisMatch;
+  if(!match) return;
+  const otherKey = tetrisOtherVersusKey();
+  if(!otherKey) return;
+  const name = otherKey === 'host' ? match.hostName : match.guestName;
+  const avatar = otherKey === 'host' ? match.hostAvatar : match.guestAvatar;
+  const score = (otherKey === 'host' ? match.hostScore : match.guestScore) || 0;
+  const alive = otherKey === 'host' ? match.hostAlive : match.guestAlive;
+
+  const nameEl = document.getElementById('tvhName');
+  const avatarEl = document.getElementById('tvhAvatar');
+  const scoreEl = document.getElementById('tvhScore');
+  const statusEl = document.getElementById('tvhStatus');
+  if(nameEl) nameEl.textContent = name || '파트너';
+  if(avatarEl) avatarEl.textContent = avatar || '🐰';
+  if(scoreEl) scoreEl.textContent = `${score.toLocaleString()}점`;
+  if(statusEl){
+    statusEl.textContent = alive === false ? '탈락' : '생존중';
+    statusEl.classList.toggle('dead', alive === false);
+  }
+
+  // 게임오버 화면에 표시할 승패 결과
+  if(match.status === 'finished'){
+    const roomInfo = store.getRoomInfo();
+    const won = roomInfo && match.winnerId === roomInfo.myId;
+    const resultEl = document.getElementById('tgcVsResult');
+    if(resultEl){
+      resultEl.style.display = 'block';
+      resultEl.className = 'tgc-vs-result ' + (won ? 'win' : 'lose');
+      resultEl.textContent = won ? '🎉 승리! 파트너보다 오래 버텼어요' : '😢 패배 — 다음엔 이길 수 있어요';
+    }
+  }
+}
+
+async function tetrisSaveScore(score){
+  const roomInfo = store.getRoomInfo();
+  const myId = roomInfo ? roomInfo.myId : 'me';
+  const myName = store.profile.name || '나';
+  const myAvatar = store.profile.avatar || '🐻';
+
+  if(roomInfo && firebaseReady){
+    try {
+      const ref = db.collection('rooms').doc(roomInfo.code);
+      const snap = await ref.get();
+      if(snap.exists){
+        const data = snap.data();
+        const scores = data.tetrisScores || [];
+        const existing = scores.find(s => s.memberId === myId);
+        const updated = existing
+          ? scores.map(s => s.memberId===myId ? { ...s, name:myName, avatar:myAvatar, best: Math.max(s.best, score), last: score, updatedAt: Date.now() } : s)
+          : [...scores, { memberId: myId, name: myName, avatar: myAvatar, best: score, last: score, updatedAt: Date.now() }];
+        await ref.update({ tetrisScores: updated });
+      }
+    } catch(e){ console.warn('테트리스 점수 저장 실패:', e); }
+  } else {
+    const best = Math.max(Number(localStorage.getItem('tetrisBestLocal') || 0), score);
+    localStorage.setItem('tetrisBestLocal', String(best));
+  }
+  renderTetrisLeaderboard();
+}
+
+function renderTetrisLeaderboard(){
+  const el = document.getElementById('tetrisLeaderboard');
+  if(!el) return;
+  const roomInfo = store.getRoomInfo();
+  const connected = !!(roomInfo && store.room && getMemberList().length >= 2);
+  const versusBtn = document.getElementById('tetrisVersusOpenBtn');
+  if(versusBtn) versusBtn.style.display = connected ? 'block' : 'none';
+
+  if(roomInfo && store.room && store.room.tetrisScores && store.room.tetrisScores.length){
+    const sorted = [...store.room.tetrisScores].sort((a,b)=>b.best-a.best);
+    el.innerHTML = sorted.map((s,i)=>`
+      <div class="tetris-lb-row">
+        <span class="tetris-lb-rank">${i+1}</span>
+        <span class="tetris-lb-avatar">${s.avatar}</span>
+        <span class="tetris-lb-name">${s.name}</span>
+        <span class="tetris-lb-score">${s.best.toLocaleString()}</span>
+      </div>`).join('');
+  } else {
+    const localBest = Number(localStorage.getItem('tetrisBestLocal') || 0);
+    el.innerHTML = `<div class="empty-state">${localBest ? `내 최고점: ${localBest.toLocaleString()}점 (파트너와 연결하면 둘의 점수를 비교할 수 있어요)` : '아직 기록이 없어요. 게임을 시작해보세요!'}</div>`;
+  }
+}
+
+function bindTetrisHoldRepeat(btnId, fn, delay=140){
+  const btn = document.getElementById(btnId);
+  if(!btn) return;
+  let iv = null;
+  const start = (e)=>{ e.preventDefault(); fn(); iv = setInterval(fn, delay); };
+  const stop = ()=>{ if(iv){ clearInterval(iv); iv=null; } };
+  btn.addEventListener('pointerdown', start);
+  btn.addEventListener('pointerup', stop);
+  btn.addEventListener('pointerleave', stop);
+  btn.addEventListener('pointercancel', stop);
+}
+bindTetrisHoldRepeat('tetrisLeftBtn', ()=>tetrisMove(-1));
+bindTetrisHoldRepeat('tetrisRightBtn', ()=>tetrisMove(1));
+bindTetrisHoldRepeat('tetrisSoftDropBtn', ()=>tetrisSoftDrop(), 90);
+
+document.getElementById('tetrisRotateBtn')?.addEventListener('click', tetrisRotate);
+document.getElementById('tetrisHardDropBtn')?.addEventListener('click', tetrisHardDrop);
+document.getElementById('tetrisStartBtn')?.addEventListener('click', tetrisStart);
+document.getElementById('tetrisRestartBtn')?.addEventListener('click', ()=>{
+  const wasVersus = tetrisState && tetrisState.versus;
+  if(wasVersus){
+    // 대결은 다시 하려면 서로 초대/수락을 새로 해야 해서, 재시작 대신 로비로 보내요
+    tetrisState = null;
+    document.getElementById('tetrisPlayScreen').style.display = 'none';
+    document.getElementById('tetrisVersusLobby').style.display = 'block';
+    renderVersusLobby();
+  } else {
+    tetrisStart();
+  }
+});
+document.getElementById('tetrisQuitBtn')?.addEventListener('click', tetrisQuit);
+document.getElementById('tetrisBackBtn')?.addEventListener('click', tetrisQuit);
+document.getElementById('tetrisPauseBtn')?.addEventListener('click', ()=>{
+  if(!tetrisState) return;
+  tetrisState.paused = !tetrisState.paused;
+  const btn = document.getElementById('tetrisPauseBtn');
+  if(btn) btn.textContent = tetrisState.paused ? '▶' : '⏸';
+  if(tetrisState.paused){
+    tetrisState.pauseStartedAt = performance.now(); // 정지한 시점 기록
+  } else {
+    // 쉰 시간만큼 기준 시각을 밀어서, 정지했던 시간은 "빨라지는 속도"에 안 들어가게 함
+    if(tetrisState.pauseStartedAt) tetrisState.startTs += (performance.now() - tetrisState.pauseStartedAt);
+    tetrisLastDrop = 0;
+    tetrisLoopId = requestAnimationFrame(tetrisLoop);
+  }
+});
+
+document.addEventListener('keydown', (e)=>{
+  if(!tetrisState || tetrisState.paused || tetrisState.gameOver) return;
+  if(!document.getElementById('tab-game')?.classList.contains('active')) return;
+  if(e.key === 'ArrowLeft') tetrisMove(-1);
+  else if(e.key === 'ArrowRight') tetrisMove(1);
+  else if(e.key === 'ArrowDown') tetrisSoftDrop();
+  else if(e.key === 'ArrowUp') tetrisRotate();
+  else if(e.key === ' '){ e.preventDefault(); tetrisHardDrop(); }
+});
+
+renderTetrisLeaderboard();
+
 function initApp(){
   const roomInfo = store.getRoomInfo();
   if(roomInfo){

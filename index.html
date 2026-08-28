@@ -242,6 +242,61 @@
 
   .install-tip{ font-size:11px; color:var(--sub); line-height:1.7; background:var(--card); border-radius:14px; padding:14px; box-shadow:0 3px 10px rgba(180,140,190,.1); }
 
+  /* ── 테트리스 ───────────────────────────────────────────── */
+  .tetris-lb-card{ background:var(--card); border-radius:16px; padding:14px 16px; box-shadow:0 4px 14px rgba(180,140,190,.14); margin-bottom:14px; }
+  .tetris-lb-row{ display:flex; align-items:center; gap:10px; padding:7px 0; border-top:1px solid #f6eef4; }
+  .tetris-lb-row:first-child{ border-top:none; }
+  .tetris-lb-rank{ width:16px; font-family:'Baloo 2'; font-size:12px; font-weight:800; color:var(--sub); text-align:center; flex-shrink:0; }
+  .tetris-lb-avatar{ font-size:16px; flex-shrink:0; }
+  .tetris-lb-name{ flex:1; font-size:12px; font-weight:800; color:var(--ink); }
+  .tetris-lb-score{ font-family:'Baloo 2'; font-size:13px; font-weight:800; color:var(--accent); }
+  .tetris-hint{ font-size:10.5px; color:var(--sub); opacity:.7; text-align:center; line-height:1.6; padding:0 10px; }
+
+  .tetris-stats-row{ display:flex; gap:8px; margin-bottom:12px; }
+  .tetris-stat{ flex:1; background:var(--card); border-radius:12px; padding:9px; text-align:center; box-shadow:0 3px 8px rgba(180,140,190,.1); }
+  .tetris-stat .tslabel{ display:block; font-size:9.5px; font-weight:800; color:var(--sub); margin-bottom:2px; }
+  .tetris-stat .tsvalue{ display:block; font-family:'Baloo 2'; font-size:16px; font-weight:800; color:var(--ink); }
+
+  .tetris-board-row{ display:flex; gap:10px; justify-content:center; margin-bottom:14px; }
+  #tetrisCanvas{ background:#2b1f3d; border-radius:10px; box-shadow:0 6px 16px rgba(0,0,0,.2); }
+  .tetris-side{ display:flex; flex-direction:column; align-items:center; gap:8px; }
+  .tetris-next-label{ font-size:9.5px; font-weight:800; color:var(--sub); }
+  #tetrisNextCanvas{ background:#2b1f3d; border-radius:8px; }
+  .tetris-pause-btn{ border:none; background:var(--card); width:34px; height:34px; border-radius:50%; font-size:14px; box-shadow:0 3px 8px rgba(180,140,190,.14); cursor:pointer; }
+  .tetris-quit-btn{ border:none; background:none; color:var(--sub); font-size:10px; font-weight:800; cursor:pointer; padding:4px; }
+
+  .tetris-controls{ display:flex; flex-direction:column; align-items:center; gap:8px; }
+  .tctrl-row{ display:flex; gap:10px; }
+  .tctrl-btn{
+    border:none; background:var(--card); width:52px; height:52px; border-radius:14px; font-size:18px;
+    color:var(--accent); box-shadow:0 3px 8px rgba(180,140,190,.14); cursor:pointer; user-select:none;
+  }
+  .tctrl-wide{ width:100%; height:44px; font-size:13px; font-weight:800; margin-top:2px; }
+
+  .tetris-gameover{ position:fixed; inset:0; background:rgba(43,31,61,.75); display:flex; align-items:center; justify-content:center; z-index:60; padding:20px; }
+  .tetris-gameover-card{ background:var(--bg); border-radius:20px; padding:24px; text-align:center; width:100%; max-width:280px; }
+  .tgc-title{ font-family:'Baloo 2'; font-size:16px; font-weight:800; color:var(--ink); margin-bottom:6px; }
+  .tgc-score{ font-family:'Baloo 2'; font-size:30px; font-weight:800; color:var(--accent); margin-bottom:16px; }
+  .tgc-vs-result{ font-size:13px; font-weight:800; margin-bottom:14px; padding:10px; border-radius:12px; }
+  .tgc-vs-result.win{ background:#eafaf0; color:#22c55e; }
+  .tgc-vs-result.lose{ background:#fff0f0; color:#e0405f; }
+
+  .tetris-vs-hud{
+    display:none; align-items:center; gap:8px; background:var(--card); border-radius:999px; padding:8px 14px;
+    box-shadow:0 3px 10px rgba(180,140,190,.1); margin-bottom:10px; font-size:11px;
+  }
+  .tvh-avatar{ font-size:16px; }
+  .tvh-name{ font-weight:800; color:var(--ink); flex:1; }
+  .tvh-status{ font-weight:800; color:#22c55e; font-size:10px; }
+  .tvh-status.dead{ color:#e0405f; }
+  .tvh-score{ font-family:'Baloo 2'; font-weight:800; color:var(--accent); }
+
+  .vs-lobby-title{ font-family:'Baloo 2'; font-size:15px; font-weight:700; color:var(--ink); margin-bottom:8px; text-align:center; }
+  .vs-lobby-desc{ font-size:11.5px; color:var(--sub); text-align:center; line-height:1.6; margin-bottom:14px; }
+  .vs-lobby-avatars{ display:flex; align-items:center; justify-content:center; gap:10px; margin-bottom:16px; }
+  .vs-lobby-avatars .va{ width:44px; height:44px; border-radius:50%; background:#faf3f8; display:flex; align-items:center; justify-content:center; font-size:22px; box-shadow:0 3px 8px rgba(0,0,0,.1); }
+  .vs-lobby-vs{ font-family:'Baloo 2'; font-size:13px; font-weight:800; color:var(--sub); }
+
   .tabbar{
     position:fixed; bottom:0; left:50%; transform:translateX(-50%); width:100%; max-width:480px;
     background:rgba(255,246,241,.92); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
@@ -368,6 +423,74 @@
     <button class="save-btn" id="saveBtn">일정 저장하기</button>
   </div>
 
+  <!-- ═══ 게임 (테트리스) ═══ -->
+  <div class="tab" id="tab-game">
+    <div class="app-header"><div class="header-title"><h1>🎮 테트리스</h1></div></div>
+
+    <div id="tetrisStartScreen">
+      <div class="tetris-lb-card">
+        <div class="field-label">🏆 최고 점수</div>
+        <div id="tetrisLeaderboard"><div class="empty-state">아직 기록이 없어요. 게임을 시작해보세요!</div></div>
+      </div>
+
+      <button class="save-btn ready" id="tetrisStartBtn">🕹️ 혼자 플레이</button>
+      <button class="save-btn ready" id="tetrisVersusOpenBtn" style="background:#ff6b9d; box-shadow:0 8px 20px rgba(255,107,157,.32);">⚔️ 파트너와 대결</button>
+      <div class="tetris-hint">파트너와 연결돼 있어야 대결할 수 있어요. 같은 순간에 시작해서 점수를 실시간으로 겨뤄요 — 먼저 게임오버 되는 쪽이 져요!</div>
+    </div>
+
+    <!-- 대결 로비 -->
+    <div id="tetrisVersusLobby" style="display:none;">
+      <div class="tetris-lb-card" id="tetrisVersusLobbyBody">
+        <!-- JS로 상태에 따라 채움 -->
+      </div>
+      <button class="tetris-quit-btn" id="tetrisVersusCloseBtn">✕ 닫기</button>
+    </div>
+
+    <div id="tetrisPlayScreen" style="display:none;">
+      <div class="tetris-vs-hud" id="tetrisVsHud" style="display:none;">
+        <span class="tvh-avatar" id="tvhAvatar">🐰</span>
+        <span class="tvh-name" id="tvhName">파트너</span>
+        <span class="tvh-status" id="tvhStatus">생존중</span>
+        <span class="tvh-score" id="tvhScore">0점</span>
+      </div>
+      <div class="tetris-stats-row">
+        <div class="tetris-stat"><span class="tslabel">점수</span><span class="tsvalue" id="tetrisScore">0</span></div>
+        <div class="tetris-stat"><span class="tslabel">레벨</span><span class="tsvalue" id="tetrisLevel">1</span></div>
+        <div class="tetris-stat"><span class="tslabel">라인</span><span class="tsvalue" id="tetrisLines">0</span></div>
+      </div>
+
+      <div class="tetris-board-row">
+        <canvas id="tetrisCanvas" width="220" height="440"></canvas>
+        <div class="tetris-side">
+          <div class="tetris-next-label">NEXT</div>
+          <canvas id="tetrisNextCanvas" width="64" height="64"></canvas>
+          <button class="tetris-pause-btn" id="tetrisPauseBtn">⏸</button>
+          <button class="tetris-quit-btn" id="tetrisQuitBtn">✕ 그만하기</button>
+        </div>
+      </div>
+
+      <div class="tetris-controls">
+        <button class="tctrl-btn" id="tetrisRotateBtn">⟳</button>
+        <div class="tctrl-row">
+          <button class="tctrl-btn" id="tetrisLeftBtn">◀</button>
+          <button class="tctrl-btn" id="tetrisSoftDropBtn">▼</button>
+          <button class="tctrl-btn" id="tetrisRightBtn">▶</button>
+        </div>
+        <button class="tctrl-btn tctrl-wide" id="tetrisHardDropBtn">⬇ 즉시 낙하</button>
+      </div>
+
+      <div class="tetris-gameover" id="tetrisGameOverOverlay" style="display:none;">
+        <div class="tetris-gameover-card">
+          <div class="tgc-title" id="tetrisGameOverTitle">게임 오버</div>
+          <div class="tgc-score"><span id="tetrisGameOverScore">0</span>점</div>
+          <div class="tgc-vs-result" id="tgcVsResult" style="display:none;"></div>
+          <button class="save-btn ready" id="tetrisRestartBtn">다시하기</button>
+          <button class="tetris-quit-btn" id="tetrisBackBtn">점수판으로</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ═══ 설정 ═══ -->
   <div class="tab" id="tab-settings">
     <div class="app-header"><h1>설정</h1></div>
@@ -433,6 +556,7 @@
     <button class="tabbtn active" data-tab="home"><span class="ic">🏠</span><span class="lb">홈</span></button>
     <button class="tabbtn" data-tab="calendar"><span class="ic">📅</span><span class="lb">캘린더</span></button>
     <button class="tabbtn" data-tab="add"><span class="ic">➕</span><span class="lb">등록</span></button>
+    <button class="tabbtn" data-tab="game"><span class="ic">🎮</span><span class="lb">게임</span></button>
     <button class="tabbtn" data-tab="settings"><span class="ic">⚙️</span><span class="lb">설정</span></button>
   </div>
 
