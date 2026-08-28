@@ -14,7 +14,7 @@
 // 먹통이 돼요.
 let db = null;
 let firebaseReady = false;
-console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix26 (직접 그린 태극기 아이콘)', 'color:#8a3fae;font-weight:bold;');
+console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix28 (실제 태극기 이미지로 교체, flagcdn.com)', 'color:#8a3fae;font-weight:bold;');
 try {
   firebase.initializeApp(firebaseConfig);
   db = firebase.firestore();
@@ -89,21 +89,9 @@ store.loadLocal();
 // 2026년 대한민국 공휴일 (대체공휴일 포함). 필요하면 나중에 다른 연도도 추가 가능해요.
 // 🇰🇷 이모지는 유니코드상 태극기가 맞지만, 기기/폰트에 따라 태극 문양 없이
 // 글자로만 보이는 경우가 있어서 직접 작게 그려서 확실하게 보이도록 했어요.
-const KR_FLAG_SVG = '<svg width="1em" height="0.72em" viewBox="0 0 24 16" style="vertical-align:-0.05em;" aria-hidden="true">'
-  + '<rect x="0.3" y="0.3" width="23.4" height="15.4" fill="#ffffff" stroke="#dcdcdc" stroke-width="0.4"/>'
-  + '<circle cx="12" cy="8" r="3.6" fill="#ffffff"/>'
-  + '<path d="M12 4.4 A3.6 3.6 0 0 1 12 11.6 A1.8 1.8 0 0 1 12 8 A1.8 1.8 0 0 0 12 4.4 Z" fill="#c60c30"/>'
-  + '<path d="M12 11.6 A3.6 3.6 0 0 1 12 4.4 A1.8 1.8 0 0 1 12 8 A1.8 1.8 0 0 0 12 11.6 Z" fill="#003478"/>'
-  + '<g stroke="#000" stroke-width="0.6" stroke-linecap="square">'
-  + '<line x1="3" y1="3.1" x2="6.2" y2="3.1"/><line x1="3" y1="4.1" x2="6.2" y2="4.1"/><line x1="3" y1="5.1" x2="6.2" y2="5.1"/>'
-  + '<line x1="17.8" y1="10.9" x2="21" y2="10.9"/><line x1="17.8" y1="12.9" x2="21" y2="12.9"/>'
-  + '<line x1="3" y1="10.9" x2="4.7" y2="10.9"/><line x1="5.3" y1="10.9" x2="7" y2="10.9"/>'
-  + '<line x1="3" y1="11.9" x2="7" y2="11.9"/>'
-  + '<line x1="3" y1="12.9" x2="4.7" y2="12.9"/><line x1="5.3" y1="12.9" x2="7" y2="12.9"/>'
-  + '<line x1="17.8" y1="3.1" x2="21" y2="3.1"/>'
-  + '<line x1="17.8" y1="4.1" x2="19.5" y2="4.1"/><line x1="20.1" y1="4.1" x2="21" y2="4.1"/>'
-  + '<line x1="17.8" y1="5.1" x2="21" y2="5.1"/>'
-  + '</g></svg>';
+// flagcdn.com은 나라별 정식 국기 이미지를 무료로 제공하는 CDN이에요.
+// 직접 그리는 대신 실제 대한민국 표준 규격 태극기 이미지를 그대로 가져와서 써요.
+const KR_FLAG_SVG = '<img src="https://flagcdn.com/kr.svg" alt="태극기" style="width:1.2em;height:auto;vertical-align:-0.18em;" />';
 
 const HOLIDAYS_KR = {
   '2026-01-01': { name:'신정', icon:'🎉' },
