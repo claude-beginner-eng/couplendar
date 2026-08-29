@@ -266,8 +266,10 @@
   .tetris-lb-score{ font-family:'Baloo 2'; font-size:13px; font-weight:800; color:var(--accent); }
   .tetris-hint{ font-size:10.5px; color:var(--sub); opacity:.7; text-align:center; line-height:1.6; padding:0 10px; }
 
-  .tetris-stats-row{ display:flex; gap:8px; margin-bottom:12px; }
+  .tetris-stats-row{ display:flex; gap:8px; margin-bottom:10px; }
   .tetris-stat{ flex:1; background:var(--card); border-radius:12px; padding:9px; text-align:center; box-shadow:0 3px 8px rgba(180,140,190,.1); }
+  .tetris-stat .tslabel{ display:block; font-size:9px; font-weight:800; color:var(--sub); margin-bottom:2px; }
+  .tetris-stat .tsvalue{ display:block; font-family:'Baloo 2'; font-size:15px; font-weight:800; color:var(--ink); }
   .tetris-stat .tslabel{ display:block; font-size:9.5px; font-weight:800; color:var(--sub); margin-bottom:2px; }
   .tetris-stat .tsvalue{ display:block; font-family:'Baloo 2'; font-size:16px; font-weight:800; color:var(--ink); }
 
@@ -280,9 +282,9 @@
     aspect-ratio: 1 / 2;
     max-width: calc(100% - 84px);
   }
-  .tetris-side{ display:flex; flex-direction:column; align-items:center; gap:8px; }
-  .tetris-next-label{ font-size:9.5px; font-weight:800; color:var(--sub); }
-  #tetrisNextCanvas{ background:#2b1f3d; border-radius:8px; }
+  .tetris-side{ display:flex; flex-direction:column; align-items:center; gap:6px; }
+  .tetris-next-label{ font-size:9px; font-weight:800; color:var(--sub); }
+  #tetrisNextCanvas{ background:#2b1f3d; border-radius:6px; display:block; width:54px; height:54px; }
   .tetris-pause-btn{ border:none; background:var(--card); width:34px; height:34px; border-radius:50%; font-size:14px; box-shadow:0 3px 8px rgba(180,140,190,.14); cursor:pointer; }
   .tetris-quit-btn{ border:none; background:none; color:var(--sub); font-size:10px; font-weight:800; cursor:pointer; padding:4px; }
 
@@ -302,18 +304,16 @@
   .tgc-vs-result.win{ background:#eafaf0; color:#22c55e; }
   .tgc-vs-result.lose{ background:#fff0f0; color:#e0405f; }
 
-  .tetris-vs-hud{
-    display:none; align-items:center; gap:10px; background:var(--card); border-radius:16px; padding:10px 12px;
-    box-shadow:0 3px 10px rgba(180,140,190,.1); margin-bottom:10px; font-size:11px;
-  }
-  .tvh-info{ flex:1; min-width:0; display:flex; flex-direction:column; gap:5px; }
-  .tvh-row1{ display:flex; align-items:center; gap:6px; }
-  .tvh-avatar{ font-size:16px; }
-  .tvh-name{ font-weight:800; color:var(--ink); }
-  .tvh-status{ font-weight:800; color:#22c55e; font-size:9.5px; background:#eafaf0; padding:2px 7px; border-radius:999px; }
+  /* 대결모드: 상대방 정보가 위가 아니라 사이드 컬럼(오른쪽)에 작게 들어가요.
+     그래야 화면이 위아래로 늘어나지 않아요. */
+  #tetrisSideVersus{ display:flex; flex-direction:column; align-items:center; gap:2px; width:100%; padding-top:2px; border-top:1px dashed #f1e4ee; margin-top:2px; }
+  .tvh-row1{ display:flex; align-items:center; gap:3px; }
+  .tvh-avatar{ font-size:11px; }
+  .tvh-name{ font-weight:800; color:var(--ink); font-size:8px; max-width:40px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .tvh-status{ font-weight:800; color:#22c55e; font-size:7px; background:#eafaf0; padding:1px 5px; border-radius:999px; }
   .tvh-status.dead{ color:#e0405f; background:#fff0f0; }
-  .tvh-score{ font-family:'Baloo 2'; font-weight:800; color:var(--accent); font-size:15px; }
-  #tvhBoardCanvas{ background:#2b1f3d; border-radius:6px; flex-shrink:0; display:block; }
+  .tvh-score{ font-family:'Baloo 2'; font-weight:800; color:var(--accent); font-size:10px; }
+  #tvhBoardCanvas{ background:#2b1f3d; border-radius:5px; flex-shrink:0; display:block; margin-top:1px; }
 
   .vs-lobby-title{ font-family:'Baloo 2'; font-size:15px; font-weight:700; color:var(--ink); margin-bottom:8px; text-align:center; }
   .vs-lobby-desc{ font-size:11.5px; color:var(--sub); text-align:center; line-height:1.6; margin-bottom:14px; }
@@ -489,13 +489,6 @@
     </div>
 
     <div id="tetrisPlayScreen" style="display:none;">
-      <div class="tetris-vs-hud" id="tetrisVsHud" style="display:none;">
-        <div class="tvh-info">
-          <div class="tvh-row1"><span class="tvh-avatar" id="tvhAvatar">🐰</span><span class="tvh-name" id="tvhName">파트너</span><span class="tvh-status" id="tvhStatus">생존중</span></div>
-          <span class="tvh-score" id="tvhScore">0점</span>
-        </div>
-        <canvas id="tvhBoardCanvas" width="70" height="140"></canvas>
-      </div>
       <div class="tetris-stats-row">
         <div class="tetris-stat"><span class="tslabel">점수</span><span class="tsvalue" id="tetrisScore">0</span></div>
         <div class="tetris-stat"><span class="tslabel">레벨</span><span class="tsvalue" id="tetrisLevel">1</span></div>
@@ -506,7 +499,13 @@
         <canvas id="tetrisCanvas" width="200" height="400"></canvas>
         <div class="tetris-side">
           <div class="tetris-next-label">NEXT</div>
-          <canvas id="tetrisNextCanvas" width="64" height="64"></canvas>
+          <canvas id="tetrisNextCanvas" width="54" height="54"></canvas>
+          <div id="tetrisSideVersus" style="display:none;">
+            <div class="tvh-row1"><span class="tvh-avatar" id="tvhAvatar">🐰</span><span class="tvh-name" id="tvhName">파트너</span></div>
+            <span class="tvh-status" id="tvhStatus">생존중</span>
+            <span class="tvh-score" id="tvhScore">0점</span>
+            <canvas id="tvhBoardCanvas" width="46" height="92"></canvas>
+          </div>
           <button class="tetris-pause-btn" id="tetrisPauseBtn">⏸</button>
           <button class="tetris-quit-btn" id="tetrisQuitBtn">✕ 그만하기</button>
         </div>

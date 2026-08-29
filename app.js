@@ -14,7 +14,7 @@
 // 먹통이 돼요.
 let db = null;
 let firebaseReady = false;
-console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix37 (보드 크기 완전 CSS 방식으로 전환, JS 측정 제거)', 'color:#8a3fae;font-weight:bold;');
+console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix42 (다음블록 미리보기 4x4로 복귀, 캔버스는 확대 유지)', 'color:#8a3fae;font-weight:bold;');
 try {
   firebase.initializeApp(firebaseConfig);
   db = firebase.firestore();
@@ -1466,7 +1466,8 @@ function tetrisRender(){
     const nextType = st.queue[0];
     const nshape = TETRIS_SHAPES[nextType][0];
     nctx.fillStyle = TETRIS_COLORS[nextType];
-    const cell = 14;
+    // 4x4 기준으로 칸 크기를 잡아요 — I블록까지 박스 안에 딱 들어가서 튀어나오지 않아요.
+    const cell = nextCanvas.width / 4;
     const offX = (4-nshape[0].length)/2, offY = (4-nshape.length)/2;
     for(let r=0; r<nshape.length; r++){
       for(let c=0; c<nshape[r].length; c++){
@@ -1584,11 +1585,13 @@ function tetrisStart(opts){
   if(vsResultEl) vsResultEl.style.display = 'none';
   const pauseBtn = document.getElementById('tetrisPauseBtn');
   if(pauseBtn) pauseBtn.textContent = '⏸';
-  const hud = document.getElementById('tetrisVsHud');
-  if(hud) hud.style.display = versus ? 'flex' : 'none';
-  // 보드 캔버스는 이제 CSS(aspect-ratio + dvh)가 화면 크기에 맞춰 자동으로 늘리고 줄여줘요.
-  // 대결모드일 땐 위에 상대방 HUD 카드가 하나 더 생기는 만큼만 이 값을 살짝 늘려줘요.
-  if(playEl) playEl.style.setProperty('--tetris-reserved', versus ? '610px' : '450px');
+  // 다음블록 미리보기는 상단 점수판 옆에 항상 떠 있어요(두 모드 공통).
+  // 사이드 컬럼(오른쪽)은 대결모드일 때만 상대방 정보로 채워져요.
+  const sideVersus = document.getElementById('tetrisSideVersus');
+  if(sideVersus) sideVersus.style.display = versus ? 'flex' : 'none';
+  // 대결모드는 사이드 컬럼에 다음블록+상대방정보가 같이 들어가서 더 길어지니까,
+  // 그만큼만 살짝 더 여유를 줘요 (그래도 위쪽에 따로 카드를 얹던 예전 방식보다는 훨씬 적게 먹어요)
+  if(playEl) playEl.style.setProperty('--tetris-reserved', versus ? '500px' : '450px');
   window.scrollTo(0, 0);
   tetrisRender();
   clearInterval(tetrisVersusSyncTimer);
