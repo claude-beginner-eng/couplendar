@@ -14,7 +14,7 @@
 // 먹통이 돼요.
 let db = null;
 let firebaseReady = false;
-console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix42 (다음블록 미리보기 4x4로 복귀, 캔버스는 확대 유지)', 'color:#8a3fae;font-weight:bold;');
+console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix44 (완전 고정 대신 바운스 방지만, 스크롤 도피구는 남겨둠)', 'color:#8a3fae;font-weight:bold;');
 try {
   firebase.initializeApp(firebaseConfig);
   db = firebase.firestore();
@@ -207,6 +207,8 @@ function showTab(name){
       if(rootEl) rootEl.style.display = 'none';
     }
   }
+  // (안전을 위해 "완전 고정"은 안 씀 — 혹시 계산이 틀려서 버튼이 화면 밖으로
+  // 나가더라도, 최소한 스크롤해서 손으로 닿을 수 있게 열어둬요.)
 }
 tabBtns.forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
 
