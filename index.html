@@ -244,6 +244,20 @@
 
   /* ── 테트리스 ───────────────────────────────────────────── */
   .tetris-lb-card{ background:var(--card); border-radius:16px; padding:14px 16px; box-shadow:0 4px 14px rgba(180,140,190,.14); margin-bottom:14px; }
+
+  /* ── 게임 목록 ───────────────────────────────────────────── */
+  .game-card{
+    display:flex; align-items:center; gap:14px; background:var(--card); border-radius:16px; padding:14px 16px;
+    box-shadow:0 4px 14px rgba(180,140,190,.14); margin-bottom:10px; cursor:pointer;
+  }
+  .game-card.disabled{ opacity:.55; cursor:default; }
+  .gc-icon{ font-size:28px; width:44px; text-align:center; flex-shrink:0; }
+  .gc-info{ flex:1; min-width:0; }
+  .gc-name{ font-family:'Baloo 2'; font-size:14px; font-weight:700; color:var(--ink); }
+  .gc-desc{ font-size:10.5px; color:var(--sub); margin-top:2px; }
+  .gc-arrow{ font-size:20px; color:var(--sub); flex-shrink:0; }
+  .gc-badge{ font-size:9.5px; font-weight:800; color:var(--sub); background:#f1e4ee; padding:4px 10px; border-radius:999px; flex-shrink:0; }
+  .tetris-back-btn{ border:none; background:none; color:var(--sub); font-size:12px; font-weight:800; cursor:pointer; padding:6px 2px; margin-bottom:10px; }
   .tetris-lb-row{ display:flex; align-items:center; gap:10px; padding:7px 0; border-top:1px solid #f6eef4; }
   .tetris-lb-row:first-child{ border-top:none; }
   .tetris-lb-rank{ width:16px; font-family:'Baloo 2'; font-size:12px; font-weight:800; color:var(--sub); text-align:center; flex-shrink:0; }
@@ -428,7 +442,25 @@
 
   <!-- ═══ 게임 (테트리스) ═══ -->
   <div class="tab" id="tab-game">
-    <div class="app-header"><div class="header-title"><h1>🎮 테트리스</h1></div></div>
+    <div class="app-header"><div class="header-title"><h1>🎮 게임</h1></div></div>
+
+    <!-- 게임 목록 -->
+    <div id="gameListScreen">
+      <div class="game-card" id="gameCardTetris">
+        <div class="gc-icon">🧩</div>
+        <div class="gc-info"><div class="gc-name">테트리스</div><div class="gc-desc">클래식 블록 쌓기, 혼자 또는 실시간 대결로</div></div>
+        <div class="gc-arrow">›</div>
+      </div>
+      <div class="game-card disabled" id="gameCardRummikub">
+        <div class="gc-icon">🀄</div>
+        <div class="gc-info"><div class="gc-name">루미큐브</div><div class="gc-desc">숫자 타일 맞추기</div></div>
+        <div class="gc-badge">준비중</div>
+      </div>
+    </div>
+
+    <!-- 테트리스 -->
+    <div id="tetrisRoot" style="display:none;">
+      <button class="tetris-back-btn" id="tetrisBackToListBtn">‹ 게임 목록으로</button>
 
     <div id="tetrisStartScreen">
       <div class="tetris-lb-card">
@@ -494,6 +526,8 @@
         </div>
       </div>
     </div>
+
+    </div><!-- /#tetrisRoot -->
   </div>
 
   <!-- ═══ 설정 ═══ -->

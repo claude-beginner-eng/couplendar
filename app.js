@@ -14,7 +14,7 @@
 // 먹통이 돼요.
 let db = null;
 let firebaseReady = false;
-console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix33 (대결모드 진단로그 추가)', 'color:#8a3fae;font-weight:bold;');
+console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix34 (게임 목록 화면 추가, 루미큐브 자리 예약)', 'color:#8a3fae;font-weight:bold;');
 try {
   firebase.initializeApp(firebaseConfig);
   db = firebase.firestore();
@@ -194,7 +194,19 @@ function showTab(name){
   if(name === 'calendar') renderCalendar();
   if(name === 'home') renderHome();
   if(name === 'add') buildWhoRow(); // 멤버가 바뀌었을 수 있으니 등록 탭 들어갈 때마다 갱신
-  if(name === 'game' && typeof renderTetrisLeaderboard === 'function') renderTetrisLeaderboard();
+  if(name === 'game'){
+    if(typeof renderTetrisLeaderboard === 'function') renderTetrisLeaderboard();
+    const listEl = document.getElementById('gameListScreen');
+    const rootEl = document.getElementById('tetrisRoot');
+    if(typeof tetrisState !== 'undefined' && tetrisState){
+      // 게임이 이미 진행 중이면(다른 탭 갔다 왔어도) 이어서 보여줘요
+      if(listEl) listEl.style.display = 'none';
+      if(rootEl) rootEl.style.display = 'block';
+    } else {
+      if(listEl) listEl.style.display = 'block';
+      if(rootEl) rootEl.style.display = 'none';
+    }
+  }
 }
 tabBtns.forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
 
@@ -1918,6 +1930,23 @@ bindTetrisHoldRepeat('tetrisSoftDropBtn', ()=>tetrisSoftDrop(), 90);
 
 document.getElementById('tetrisRotateBtn')?.addEventListener('click', tetrisRotate);
 document.getElementById('tetrisHardDropBtn')?.addEventListener('click', tetrisHardDrop);
+/* ── 게임 목록 ─────────────────────────────────────────────── */
+document.getElementById('gameCardTetris')?.addEventListener('click', ()=>{
+  document.getElementById('gameListScreen').style.display = 'none';
+  document.getElementById('tetrisRoot').style.display = 'block';
+  document.getElementById('tetrisStartScreen').style.display = 'block';
+  document.getElementById('tetrisVersusLobby').style.display = 'none';
+  document.getElementById('tetrisPlayScreen').style.display = 'none';
+  renderTetrisLeaderboard();
+});
+document.getElementById('gameCardRummikub')?.addEventListener('click', ()=>{
+  toast('루미큐브는 곧 추가될 예정이에요! 🀄');
+});
+document.getElementById('tetrisBackToListBtn')?.addEventListener('click', ()=>{
+  document.getElementById('tetrisRoot').style.display = 'none';
+  document.getElementById('gameListScreen').style.display = 'block';
+});
+
 document.getElementById('tetrisStartBtn')?.addEventListener('click', tetrisStart);
 document.getElementById('tetrisRestartBtn')?.addEventListener('click', ()=>{
   const wasVersus = tetrisState && tetrisState.versus;
