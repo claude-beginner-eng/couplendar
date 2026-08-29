@@ -14,7 +14,7 @@
 // 먹통이 돼요.
 let db = null;
 let firebaseReady = false;
-console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix35 (락딜레이 + 반응형 보드크기 + 대결 미니보드 확대)', 'color:#8a3fae;font-weight:bold;');
+console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix37 (보드 크기 완전 CSS 방식으로 전환, JS 측정 제거)', 'color:#8a3fae;font-weight:bold;');
 try {
   firebase.initializeApp(firebaseConfig);
   db = firebase.firestore();
@@ -1269,7 +1269,7 @@ function connectToRoomListener(code){
    2단계(추후): 실시간 대결 모드
    ============================================================ */
 const TETRIS_COLS = 10, TETRIS_ROWS = 20;
-let TETRIS_CELL = 22; // 화면 크기에 맞춰 동적으로 조절되므로 const가 아니라 let
+const TETRIS_CELL = 20; // 캔버스 내부 좌표 계산용 고정값. 실제 화면에 보이는 크기는 CSS가 알아서 맞춰줘요.
 const TETRIS_LOCK_DELAY = 500; // 바닥에 닿아도 이 시간(ms) 동안은 움직이거나 회전할 여유를 줌
 
 const TETRIS_SHAPES = {
@@ -1586,7 +1586,11 @@ function tetrisStart(opts){
   if(pauseBtn) pauseBtn.textContent = '⏸';
   const hud = document.getElementById('tetrisVsHud');
   if(hud) hud.style.display = versus ? 'flex' : 'none';
-  tetrisResizeCanvas(); // 화면 크기 + 대결모드 여부에 맞춰 보드 칸 크기를 다시 계산
+  // 보드 캔버스는 이제 CSS(aspect-ratio + dvh)가 화면 크기에 맞춰 자동으로 늘리고 줄여줘요.
+  // 대결모드일 땐 위에 상대방 HUD 카드가 하나 더 생기는 만큼만 이 값을 살짝 늘려줘요.
+  if(playEl) playEl.style.setProperty('--tetris-reserved', versus ? '610px' : '450px');
+  window.scrollTo(0, 0);
+  tetrisRender();
   clearInterval(tetrisVersusSyncTimer);
   if(versus){
     tetrisVersusRenderHud();
@@ -1603,31 +1607,11 @@ function tetrisStart(opts){
 // 고정 크기(220x440)로 박아두면 화면이 작은 폰에서는 넘치고, 큰 폰에서는 애매하게
 // 남아서 레이아웃이 흔들려 보였어요. 대결모드일 때는 상대방 HUD 카드가 위에 하나
 // 더 생기는 만큼 세로 공간을 더 아껴줘야 해서 따로 계산해요.
+// 캔버스 크기 자체는 이제 CSS(aspect-ratio + dvh)가 화면에 맞게 알아서 늘리고 줄여줘요.
+// 여기선 그냥 다시 그리기만 해주면 돼요 (JS로 픽셀 계산할 필요 없어짐).
 function tetrisResizeCanvas(){
-  const canvas = document.getElementById('tetrisCanvas');
-  const wrapper = document.querySelector('.tetris-board-row');
-  if(!canvas || !wrapper) return;
-
-  const totalWidth = wrapper.clientWidth || 300;
-  const sideColumnWidth = 78; // .tetris-side 칼럼(다음블록 미리보기+버튼) 대략 폭 + 여백
-  const widthCell = Math.floor((totalWidth - sideColumnWidth) / TETRIS_COLS);
-
-  const isVersus = !!(tetrisState && tetrisState.versus);
-  const reservedHeight = isVersus ? 430 : 340; // 헤더/통계바/컨트롤/탭바/HUD가 차지하는 대략적인 세로 공간
-  const availableHeight = Math.max(220, window.innerHeight - reservedHeight);
-  const heightCell = Math.floor(availableHeight / TETRIS_ROWS);
-
-  let cell = Math.min(widthCell, heightCell);
-  cell = Math.max(13, Math.min(24, cell)); // 너무 작거나(조작 어려움) 너무 크지(화면 넘침) 않게 제한
-  TETRIS_CELL = cell;
-
-  canvas.width = TETRIS_CELL * TETRIS_COLS;
-  canvas.height = TETRIS_CELL * TETRIS_ROWS;
-
   if(tetrisState) tetrisRender();
 }
-window.addEventListener('resize', ()=>{ if(tetrisState) tetrisResizeCanvas(); });
-window.addEventListener('orientationchange', ()=>{ if(tetrisState) setTimeout(tetrisResizeCanvas, 200); });
 
 function tetrisQuit(){
   cancelAnimationFrame(tetrisLoopId);

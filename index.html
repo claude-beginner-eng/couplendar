@@ -271,8 +271,15 @@
   .tetris-stat .tslabel{ display:block; font-size:9.5px; font-weight:800; color:var(--sub); margin-bottom:2px; }
   .tetris-stat .tsvalue{ display:block; font-family:'Baloo 2'; font-size:16px; font-weight:800; color:var(--ink); }
 
-  .tetris-board-row{ display:flex; gap:10px; justify-content:center; margin-bottom:14px; }
-  #tetrisCanvas{ background:#2b1f3d; border-radius:10px; box-shadow:0 6px 16px rgba(0,0,0,.2); }
+  .tetris-board-row{ display:flex; gap:10px; justify-content:center; align-items:flex-start; margin-bottom:10px; }
+  #tetrisPlayScreen{ --tetris-reserved: 430px; }
+  #tetrisCanvas{
+    background:#2b1f3d; border-radius:10px; box-shadow:0 6px 16px rgba(0,0,0,.2);
+    display:block; width:auto;
+    height: min(54vh, calc(100dvh - var(--tetris-reserved)));
+    aspect-ratio: 1 / 2;
+    max-width: calc(100% - 84px);
+  }
   .tetris-side{ display:flex; flex-direction:column; align-items:center; gap:8px; }
   .tetris-next-label{ font-size:9.5px; font-weight:800; color:var(--sub); }
   #tetrisNextCanvas{ background:#2b1f3d; border-radius:8px; }
@@ -496,7 +503,7 @@
       </div>
 
       <div class="tetris-board-row">
-        <canvas id="tetrisCanvas" width="220" height="440"></canvas>
+        <canvas id="tetrisCanvas" width="200" height="400"></canvas>
         <div class="tetris-side">
           <div class="tetris-next-label">NEXT</div>
           <canvas id="tetrisNextCanvas" width="64" height="64"></canvas>
