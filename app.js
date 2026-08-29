@@ -14,7 +14,7 @@
 // 먹통이 돼요.
 let db = null;
 let firebaseReady = false;
-console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix34 (게임 목록 화면 추가, 루미큐브 자리 예약)', 'color:#8a3fae;font-weight:bold;');
+console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix35 (락딜레이 + 반응형 보드크기 + 대결 미니보드 확대)', 'color:#8a3fae;font-weight:bold;');
 try {
   firebase.initializeApp(firebaseConfig);
   db = firebase.firestore();
@@ -1268,7 +1268,9 @@ function connectToRoomListener(code){
    1단계: 각자 플레이하고 점수판으로 경쟁 (지금 만드는 버전)
    2단계(추후): 실시간 대결 모드
    ============================================================ */
-const TETRIS_COLS = 10, TETRIS_ROWS = 20, TETRIS_CELL = 22;
+const TETRIS_COLS = 10, TETRIS_ROWS = 20;
+let TETRIS_CELL = 22; // 화면 크기에 맞춰 동적으로 조절되므로 const가 아니라 let
+const TETRIS_LOCK_DELAY = 500; // 바닥에 닿아도 이 시간(ms) 동안은 움직이거나 회전할 여유를 줌
 
 const TETRIS_SHAPES = {
   I: [
@@ -1482,40 +1484,63 @@ function tetrisLoop(timestamp){
   const elapsedSec = (timestamp - st.startTs) / 1000;
   const timeSpeedup = Math.floor(elapsedSec / 10) * 10;
   const interval = Math.max(100, 800 - (st.level-1)*60 - timeSpeedup);
-  if(timestamp - tetrisLastDrop > interval){
-    tetrisDrop();
-    tetrisLastDrop = timestamp;
+
+  // 바닥(또는 다른 블록)에 닿았는지는 매 프레임 확인하고, 낙하 간격이랑 별도로
+  // "닿은 채로 TETRIS_LOCK_DELAY(500ms)가 지나야만" 고정돼요 — 그래야 딱 닿자마자
+  // 바로 고정되지 않고, 좌우로 밀거나 회전할 여유가 생겨요.
+  const grounded = tetrisCollide(st.board, st.piece, 0, 1);
+  if(grounded){
+    if(st.groundedSince === null) st.groundedSince = timestamp;
+    if(timestamp - st.groundedSince > TETRIS_LOCK_DELAY){
+      tetrisLock();
+      tetrisLastDrop = timestamp;
+    }
+  } else {
+    st.groundedSince = null;
+    if(timestamp - tetrisLastDrop > interval){
+      tetrisDrop();
+      tetrisLastDrop = timestamp;
+    }
   }
   tetrisRender();
   tetrisLoopId = requestAnimationFrame(tetrisLoop);
 }
 
 function tetrisDrop(){
+  // 여기서는 그냥 한 칸 내려가는 것만 시도해요. 실제 "고정"은 tetrisLoop의
+  // 락 딜레이 로직에서 처리해요 (바로 여기서 잠가버리면 딜레이가 의미 없어져요).
   const st = tetrisState;
   if(!tetrisCollide(st.board, st.piece, 0, 1)){
     st.piece.y++;
-  } else {
-    tetrisLock();
+    st.groundedSince = null;
   }
 }
 function tetrisMove(dx){
   const st = tetrisState;
   if(!st || st.paused || st.gameOver) return;
-  if(!tetrisCollide(st.board, st.piece, dx, 0)) st.piece.x += dx;
+  if(!tetrisCollide(st.board, st.piece, dx, 0)){
+    st.piece.x += dx;
+    // 바닥에 닿은 채로 옆으로 움직였으면, 고정까지 남은 시간을 다시 살짝 줘요
+    if(tetrisCollide(st.board, st.piece, 0, 1)) st.groundedSince = performance.now();
+  }
   tetrisRender();
 }
 function tetrisRotate(){
   const st = tetrisState;
   if(!st || st.paused || st.gameOver) return;
   const newRot = (st.piece.rotation+1) % TETRIS_SHAPES[st.piece.type].length;
-  if(!tetrisCollide(st.board, st.piece, 0, 0, newRot)) st.piece.rotation = newRot;
+  if(!tetrisCollide(st.board, st.piece, 0, 0, newRot)){
+    st.piece.rotation = newRot;
+    if(tetrisCollide(st.board, st.piece, 0, 1)) st.groundedSince = performance.now();
+  }
   tetrisRender();
 }
 function tetrisHardDrop(){
   const st = tetrisState;
   if(!st || st.paused || st.gameOver) return;
   while(!tetrisCollide(st.board, st.piece, 0, 1)) st.piece.y++;
-  tetrisLock();
+  st.groundedSince = null;
+  tetrisLock(); // 즉시 낙하는 딜레이 없이 바로 고정
   tetrisRender();
 }
 function tetrisSoftDrop(){
@@ -1544,7 +1569,7 @@ async function tetrisGameOver(){
 
 function tetrisStart(opts){
   const versus = !!(opts && opts.versus);
-  tetrisState = { board: tetrisEmptyBoard(), queue: tetrisBag(), score:0, level:1, lines:0, paused:false, gameOver:false, startTs: performance.now(), versus };
+  tetrisState = { board: tetrisEmptyBoard(), queue: tetrisBag(), score:0, level:1, lines:0, paused:false, gameOver:false, startTs: performance.now(), versus, groundedSince: null };
   tetrisSpawnNext();
   tetrisLastDrop = 0;
   const startEl = document.getElementById('tetrisStartScreen');
@@ -1561,6 +1586,7 @@ function tetrisStart(opts){
   if(pauseBtn) pauseBtn.textContent = '⏸';
   const hud = document.getElementById('tetrisVsHud');
   if(hud) hud.style.display = versus ? 'flex' : 'none';
+  tetrisResizeCanvas(); // 화면 크기 + 대결모드 여부에 맞춰 보드 칸 크기를 다시 계산
   clearInterval(tetrisVersusSyncTimer);
   if(versus){
     tetrisVersusRenderHud();
@@ -1572,6 +1598,36 @@ function tetrisStart(opts){
   cancelAnimationFrame(tetrisLoopId);
   tetrisLoopId = requestAnimationFrame(tetrisLoop);
 }
+
+// 폰 화면 크기(가로/세로)에 맞춰서 보드 한 칸의 픽셀 크기를 다시 계산해요.
+// 고정 크기(220x440)로 박아두면 화면이 작은 폰에서는 넘치고, 큰 폰에서는 애매하게
+// 남아서 레이아웃이 흔들려 보였어요. 대결모드일 때는 상대방 HUD 카드가 위에 하나
+// 더 생기는 만큼 세로 공간을 더 아껴줘야 해서 따로 계산해요.
+function tetrisResizeCanvas(){
+  const canvas = document.getElementById('tetrisCanvas');
+  const wrapper = document.querySelector('.tetris-board-row');
+  if(!canvas || !wrapper) return;
+
+  const totalWidth = wrapper.clientWidth || 300;
+  const sideColumnWidth = 78; // .tetris-side 칼럼(다음블록 미리보기+버튼) 대략 폭 + 여백
+  const widthCell = Math.floor((totalWidth - sideColumnWidth) / TETRIS_COLS);
+
+  const isVersus = !!(tetrisState && tetrisState.versus);
+  const reservedHeight = isVersus ? 430 : 340; // 헤더/통계바/컨트롤/탭바/HUD가 차지하는 대략적인 세로 공간
+  const availableHeight = Math.max(220, window.innerHeight - reservedHeight);
+  const heightCell = Math.floor(availableHeight / TETRIS_ROWS);
+
+  let cell = Math.min(widthCell, heightCell);
+  cell = Math.max(13, Math.min(24, cell)); // 너무 작거나(조작 어려움) 너무 크지(화면 넘침) 않게 제한
+  TETRIS_CELL = cell;
+
+  canvas.width = TETRIS_CELL * TETRIS_COLS;
+  canvas.height = TETRIS_CELL * TETRIS_ROWS;
+
+  if(tetrisState) tetrisRender();
+}
+window.addEventListener('resize', ()=>{ if(tetrisState) tetrisResizeCanvas(); });
+window.addEventListener('orientationchange', ()=>{ if(tetrisState) setTimeout(tetrisResizeCanvas, 200); });
 
 function tetrisQuit(){
   cancelAnimationFrame(tetrisLoopId);
@@ -1826,9 +1882,8 @@ function tetrisVersusRenderHud(){
 function tetrisVersusRenderOpponentBoard(match, otherKey){
   const canvas = document.getElementById('tvhBoardCanvas');
   if(!canvas) return;
-  console.log('[tetris-render] otherKey=', otherKey, 'hasBoard=', !!match[`${otherKey}Board`], 'boardLen=', match[`${otherKey}Board`] && match[`${otherKey}Board`].length, 'pieceType=', match[`${otherKey}PieceType`]);
   const ctx = canvas.getContext('2d');
-  const cell = canvas.width / TETRIS_COLS; // 8px
+  const cell = canvas.width / TETRIS_COLS;
   ctx.fillStyle = '#2b1f3d';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -1971,7 +2026,10 @@ document.getElementById('tetrisPauseBtn')?.addEventListener('click', ()=>{
     tetrisState.pauseStartedAt = performance.now(); // 정지한 시점 기록
   } else {
     // 쉰 시간만큼 기준 시각을 밀어서, 정지했던 시간은 "빨라지는 속도"에 안 들어가게 함
-    if(tetrisState.pauseStartedAt) tetrisState.startTs += (performance.now() - tetrisState.pauseStartedAt);
+    const pausedFor = tetrisState.pauseStartedAt ? (performance.now() - tetrisState.pauseStartedAt) : 0;
+    tetrisState.startTs += pausedFor;
+    // 락 딜레이 기준 시각도 같이 밀어줘야, 쉬었다 왔을 때 곧바로 고정되는 걸 방지해요
+    if(tetrisState.groundedSince !== null) tetrisState.groundedSince += pausedFor;
     tetrisLastDrop = 0;
     tetrisLoopId = requestAnimationFrame(tetrisLoop);
   }
