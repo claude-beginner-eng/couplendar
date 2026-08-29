@@ -14,7 +14,7 @@
 // 먹통이 돼요.
 let db = null;
 let firebaseReady = false;
-console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix30 (테트리스 격자/고스트/가속 + 실시간 대결모드)', 'color:#8a3fae;font-weight:bold;');
+console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix33 (대결모드 진단로그 추가)', 'color:#8a3fae;font-weight:bold;');
 try {
   firebase.initializeApp(firebaseConfig);
   db = firebase.firestore();
@@ -1375,8 +1375,8 @@ function tetrisLock(){
     st.score += (pointsTable[cleared] || 800) * st.level;
     st.lines += cleared;
     st.level = Math.floor(st.lines/10) + 1;
-    if(st.versus) tetrisVersusSyncScore(); // 조각 놓을 때마다(줄 지웠을 때) 파트너 화면에 실시간 반영
   }
+  if(st.versus) tetrisVersusSyncScore(); // 조각을 놓을 때마다(줄 클리어 여부와 상관없이) 파트너 화면에 반영
   if(!st.gameOver) tetrisSpawnNext();
 }
 
@@ -1516,6 +1516,7 @@ function tetrisSoftDrop(){
 async function tetrisGameOver(){
   tetrisState.gameOver = true;
   cancelAnimationFrame(tetrisLoopId);
+  clearInterval(tetrisVersusSyncTimer);
   const scoreEl = document.getElementById('tetrisGameOverScore');
   if(scoreEl) scoreEl.textContent = tetrisState.score;
   const overlay = document.getElementById('tetrisGameOverOverlay');
@@ -1548,13 +1549,21 @@ function tetrisStart(opts){
   if(pauseBtn) pauseBtn.textContent = '⏸';
   const hud = document.getElementById('tetrisVsHud');
   if(hud) hud.style.display = versus ? 'flex' : 'none';
-  if(versus) tetrisVersusRenderHud();
+  clearInterval(tetrisVersusSyncTimer);
+  if(versus){
+    tetrisVersusRenderHud();
+    tetrisVersusSyncScore(); // 시작하자마자 한 번 즉시 보내서 상대 화면에 빈 보드부터 바로 뜨게
+    tetrisVersusSyncTimer = setInterval(()=>{
+      if(tetrisState && tetrisState.versus && !tetrisState.paused && !tetrisState.gameOver) tetrisVersusSyncScore();
+    }, 300); // 조각을 놓을 때뿐 아니라 0.3초마다도 계속 보내서 움직임이 좀 더 매끄럽게 보이게
+  }
   cancelAnimationFrame(tetrisLoopId);
   tetrisLoopId = requestAnimationFrame(tetrisLoop);
 }
 
 function tetrisQuit(){
   cancelAnimationFrame(tetrisLoopId);
+  clearInterval(tetrisVersusSyncTimer);
   // 대결 도중에 그만두면 기권패 처리 (아직 안 끝난 대결이었을 때만)
   if(tetrisState && tetrisState.versus && !tetrisState.gameOver){
     tetrisVersusReportDeath();
@@ -1683,17 +1692,34 @@ async function tetrisVersusCancel(){
   document.getElementById('tetrisStartScreen').style.display = 'block';
 }
 
+function tetrisEncodeBoard(board){
+  let s = '';
+  for(let r=0; r<TETRIS_ROWS; r++) for(let c=0; c<TETRIS_COLS; c++) s += board[r][c] || '0';
+  return s;
+}
+
 async function tetrisVersusSyncScore(){
   const roomInfo = store.getRoomInfo();
   const key = tetrisMyVersusKey();
-  if(!roomInfo || !firebaseReady || !key || !tetrisState) return;
+  if(!roomInfo || !firebaseReady || !key || !tetrisState){
+    console.log('[tetris-sync] 동기화 건너뜀:', { hasRoomInfo:!!roomInfo, firebaseReady, key, hasState:!!tetrisState });
+    return;
+  }
   try {
     const patch = {};
     patch[`tetrisMatch.${key}Score`] = tetrisState.score;
     patch[`tetrisMatch.${key}Lines`] = tetrisState.lines;
+    patch[`tetrisMatch.${key}Board`] = tetrisEncodeBoard(tetrisState.board);
+    patch[`tetrisMatch.${key}PieceType`] = tetrisState.piece.type;
+    patch[`tetrisMatch.${key}PieceX`] = tetrisState.piece.x;
+    patch[`tetrisMatch.${key}PieceY`] = tetrisState.piece.y;
+    patch[`tetrisMatch.${key}PieceRot`] = tetrisState.piece.rotation;
     await db.collection('rooms').doc(roomInfo.code).update(patch);
-  } catch(e){ console.warn('대결 점수 동기화 실패:', e); }
+    console.log('[tetris-sync] 보냄:', key, 'boardLen=', patch[`tetrisMatch.${key}Board`].length, 'piece=', tetrisState.piece.type);
+  } catch(e){ console.warn('[tetris-sync] 대결 동기화 실패:', e); }
 }
+
+let tetrisVersusSyncTimer = null;
 
 async function tetrisVersusReportDeath(){
   const roomInfo = store.getRoomInfo();
@@ -1723,6 +1749,7 @@ function tetrisHandleMatchUpdate(){
   const roomInfo = store.getRoomInfo();
   if(!match || !roomInfo) return;
   const iAmParticipant = match.hostId === roomInfo.myId || match.guestId === roomInfo.myId;
+  console.log('[tetris-match]', { status: match.status, iAmParticipant, hasTetrisState: !!tetrisState, isVersus: !!(tetrisState && tetrisState.versus) });
 
   // 로비가 열려있으면 최신 상태로 다시 그림 (초대 도착, 상대 수락 등)
   if(document.getElementById('tetrisVersusLobby')?.style.display !== 'none'){
@@ -1767,6 +1794,7 @@ function tetrisVersusRenderHud(){
     statusEl.textContent = alive === false ? '탈락' : '생존중';
     statusEl.classList.toggle('dead', alive === false);
   }
+  tetrisVersusRenderOpponentBoard(match, otherKey);
 
   // 게임오버 화면에 표시할 승패 결과
   if(match.status === 'finished'){
@@ -1777,6 +1805,48 @@ function tetrisVersusRenderHud(){
       resultEl.style.display = 'block';
       resultEl.className = 'tgc-vs-result ' + (won ? 'win' : 'lose');
       resultEl.textContent = won ? '🎉 승리! 파트너보다 오래 버텼어요' : '😢 패배 — 다음엔 이길 수 있어요';
+    }
+  }
+}
+
+// 상대방 보드를 작은 캔버스에 그려줘요. 0.3초 간격 스냅샷이라 완전히 부드럽게
+// 움직이진 않지만, "지금 상대가 어떤 상황인지" 충분히 보여요.
+function tetrisVersusRenderOpponentBoard(match, otherKey){
+  const canvas = document.getElementById('tvhBoardCanvas');
+  if(!canvas) return;
+  console.log('[tetris-render] otherKey=', otherKey, 'hasBoard=', !!match[`${otherKey}Board`], 'boardLen=', match[`${otherKey}Board`] && match[`${otherKey}Board`].length, 'pieceType=', match[`${otherKey}PieceType`]);
+  const ctx = canvas.getContext('2d');
+  const cell = canvas.width / TETRIS_COLS; // 8px
+  ctx.fillStyle = '#2b1f3d';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const boardStr = match[`${otherKey}Board`];
+  if(boardStr){
+    for(let r=0; r<TETRIS_ROWS; r++){
+      for(let c=0; c<TETRIS_COLS; c++){
+        const v = boardStr[r*TETRIS_COLS + c];
+        if(v && v !== '0'){
+          ctx.fillStyle = TETRIS_COLORS[v] || '#888';
+          ctx.fillRect(c*cell, r*cell, cell-0.5, cell-0.5);
+        }
+      }
+    }
+  }
+
+  const pType = match[`${otherKey}PieceType`];
+  if(pType && TETRIS_SHAPES[pType]){
+    const rot = match[`${otherKey}PieceRot`] || 0;
+    const px = match[`${otherKey}PieceX`] || 0;
+    const py = match[`${otherKey}PieceY`] || 0;
+    const shape = TETRIS_SHAPES[pType][rot];
+    ctx.fillStyle = TETRIS_COLORS[pType];
+    for(let r=0; r<shape.length; r++){
+      for(let c=0; c<shape[r].length; c++){
+        if(!shape[r][c]) continue;
+        const y = py + r;
+        if(y<0) continue;
+        ctx.fillRect((px+c)*cell, y*cell, cell-0.5, cell-0.5);
+      }
     }
   }
 }
