@@ -14,7 +14,7 @@
 // 먹통이 돼요.
 let db = null;
 let firebaseReady = false;
-console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix44 (완전 고정 대신 바운스 방지만, 스크롤 도피구는 남겨둠)', 'color:#8a3fae;font-weight:bold;');
+console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix45 (루미큐브 1단계: 대결모드 기본 플레이 추가)', 'color:#8a3fae;font-weight:bold;');
 try {
   firebase.initializeApp(firebaseConfig);
   db = firebase.firestore();
@@ -1257,6 +1257,7 @@ function connectToRoomListener(code){
     buildWhoRow(); // 멤버 정보가 방금 도착했으니, 등록 탭의 "누구 일정" 목록도 다시 그려야 함
     if(typeof renderTetrisLeaderboard === 'function') renderTetrisLeaderboard(); // 파트너 점수도 실시간으로 반영
     if(typeof tetrisHandleMatchUpdate === 'function') tetrisHandleMatchUpdate(); // 대결 초대/자동시작/실시간 HUD
+    if(typeof rmkHandleMatchUpdate === 'function') rmkHandleMatchUpdate(); // 루미큐브 대결 초대/자동시작/실시간 화면
   }, err=>{
     console.warn('실시간 동기화 오류:', err);
     toast('실시간 동기화 중 문제가 발생했어요');
@@ -2035,6 +2036,401 @@ document.addEventListener('keydown', (e)=>{
 });
 
 renderTetrisLeaderboard();
+
+/* ============================================================
+   루미큐브 (1단계: 손패에서 새 조합 내려놓기까지. 보드 재배치는 2단계에서 추가 예정)
+   ------------------------------------------------------------
+   ⚠️ 참고: 손패 데이터가 같은 Firestore 방 문서 안에 저장되기 때문에,
+   개발자도구를 열어보면 이론적으로 상대방 손패도 코드상으로는 보일 수 있어요.
+   실제 루미큐브처럼 "서로 안 보는 게 규칙"인 셈이라, 정직하게 플레이해주세요 :)
+   ============================================================ */
+const RMK_COLORS = ['red','blue','black','yellow'];
+let rmkSelectedIds = new Set();
+
+function rmkBuildDeck(){
+  const deck = [];
+  RMK_COLORS.forEach(color=>{
+    for(let n=1;n<=13;n++){
+      deck.push({ id:`${color}${n}-a`, color, number:n, isJoker:false });
+      deck.push({ id:`${color}${n}-b`, color, number:n, isJoker:false });
+    }
+  });
+  deck.push({ id:'joker-1', color:null, number:0, isJoker:true });
+  deck.push({ id:'joker-2', color:null, number:0, isJoker:true });
+  return deck;
+}
+function rmkShuffle(arr){
+  const a = [...arr];
+  for(let i=a.length-1; i>0; i--){ const j = Math.floor(Math.random()*(i+1)); [a[i],a[j]] = [a[j],a[i]]; }
+  return a;
+}
+
+// 그룹: 같은 숫자, 서로 다른 색 3~4장
+function rmkIsValidGroup(tiles){
+  if(tiles.length < 3 || tiles.length > 4) return false;
+  const nonJokers = tiles.filter(t=>!t.isJoker);
+  if(nonJokers.length === 0) return false;
+  if(new Set(nonJokers.map(t=>t.number)).size > 1) return false;
+  const colors = nonJokers.map(t=>t.color);
+  if(new Set(colors).size !== colors.length) return false; // 색 중복 불가
+  return true;
+}
+// 런: 같은 색, 연속된 숫자 3장 이상 (고른 순서를 그대로 순서로 인정, 조커가 빈자리를 채움)
+function rmkIsValidRun(tiles){
+  if(tiles.length < 3) return false;
+  const nonJokers = tiles.filter(t=>!t.isJoker);
+  if(nonJokers.length === 0) return false;
+  if(new Set(nonJokers.map(t=>t.color)).size > 1) return false;
+  const firstIdx = tiles.findIndex(t=>!t.isJoker);
+  const expectedStart = tiles[firstIdx].number - firstIdx;
+  if(expectedStart < 1 || expectedStart + tiles.length - 1 > 13) return false;
+  for(let i=0; i<tiles.length; i++){
+    if(!tiles[i].isJoker && tiles[i].number !== expectedStart + i) return false;
+  }
+  return true;
+}
+function rmkIsValidSet(tiles){ return rmkIsValidGroup(tiles) || rmkIsValidRun(tiles); }
+function rmkSetValue(tiles){
+  if(rmkIsValidGroup(tiles)){
+    const num = tiles.find(t=>!t.isJoker).number;
+    return tiles.reduce((s,t)=> s + (t.isJoker ? num : t.number), 0);
+  }
+  if(rmkIsValidRun(tiles)){
+    const firstIdx = tiles.findIndex(t=>!t.isJoker);
+    const expectedStart = tiles[firstIdx].number - firstIdx;
+    let sum = 0;
+    for(let i=0; i<tiles.length; i++) sum += expectedStart + i;
+    return sum;
+  }
+  return 0;
+}
+
+function rmkMyKey(){
+  const match = store.room && store.room.rummikubMatch;
+  const roomInfo = store.getRoomInfo();
+  if(!match || !roomInfo) return null;
+  if(match.hostId === roomInfo.myId) return 'host';
+  if(match.guestId === roomInfo.myId) return 'guest';
+  return null;
+}
+function rmkOtherKey(){
+  const k = rmkMyKey();
+  return k === 'host' ? 'guest' : (k === 'guest' ? 'host' : null);
+}
+async function rmkUpdateMatch(patch){
+  const roomInfo = store.getRoomInfo();
+  if(!roomInfo || !firebaseReady) return;
+  try { await db.collection('rooms').doc(roomInfo.code).update(patch); }
+  catch(e){ console.warn('루미큐브 동기화 실패:', e); toast('저장에 실패했어요'); }
+}
+
+function rmkTileHTML(tile, selected, staticTile){
+  const cls = ['rmk-tile'];
+  cls.push(tile.isJoker ? 'joker' : tile.color);
+  if(selected) cls.push('selected');
+  if(staticTile) cls.push('static');
+  const label = tile.isJoker ? '★' : tile.number;
+  return `<div class="${cls.join(' ')}" data-tile-id="${tile.id}">${label}</div>`;
+}
+function rmkSortHand(hand){
+  return [...hand].sort((a,b)=>{
+    if(a.isJoker && b.isJoker) return 0;
+    if(a.isJoker) return 1;
+    if(b.isJoker) return -1;
+    if(a.color !== b.color) return RMK_COLORS.indexOf(a.color) - RMK_COLORS.indexOf(b.color);
+    return a.number - b.number;
+  });
+}
+function rmkRenderBoard(board){
+  const el = document.getElementById('rmkBoard');
+  if(!el) return;
+  if(!board || board.length === 0){
+    el.innerHTML = `<div class="rmk-board-empty">아직 보드에 놓인 조합이 없어요</div>`;
+    return;
+  }
+  el.innerHTML = board.map(set => `<div class="rmk-set">${set.map(t=>rmkTileHTML(t,false,true)).join('')}</div>`).join('');
+}
+function rmkRenderHand(hand){
+  const el = document.getElementById('rmkHand');
+  if(!el) return;
+  const sorted = rmkSortHand(hand);
+  el.innerHTML = sorted.map(t => rmkTileHTML(t, rmkSelectedIds.has(t.id), false)).join('');
+  el.querySelectorAll('.rmk-tile').forEach(elm=>{
+    elm.addEventListener('click', ()=>{
+      const id = elm.dataset.tileId;
+      if(rmkSelectedIds.has(id)) rmkSelectedIds.delete(id);
+      else rmkSelectedIds.add(id);
+      rmkRenderPlayScreen();
+    });
+  });
+  const countEl = document.getElementById('rmkHandCount');
+  if(countEl) countEl.textContent = hand.length;
+}
+
+function rmkRenderPlayScreen(){
+  const match = store.room && store.room.rummikubMatch;
+  if(!match || match.status !== 'playing') return;
+  const myKey = rmkMyKey();
+  const otherKey = rmkOtherKey();
+  if(!myKey || !otherKey) return;
+
+  const isMyTurn = match.turn === myKey;
+  const turnBadge = document.getElementById('rmkTurnBadge');
+  if(turnBadge){
+    turnBadge.textContent = isMyTurn ? '내 차례' : '상대 차례';
+    turnBadge.classList.toggle('waiting', !isMyTurn);
+  }
+  const poolEl = document.getElementById('rmkPoolCount');
+  if(poolEl) poolEl.textContent = (match.pool || []).length;
+  const oppAvatarEl = document.getElementById('rmkOppAvatar');
+  const oppNameEl = document.getElementById('rmkOppName');
+  const oppCountEl = document.getElementById('rmkOppCount');
+  if(oppAvatarEl) oppAvatarEl.textContent = otherKey === 'host' ? match.hostAvatar : match.guestAvatar;
+  if(oppNameEl) oppNameEl.textContent = otherKey === 'host' ? match.hostName : match.guestName;
+  if(oppCountEl) oppCountEl.textContent = (match[`${otherKey}Hand`] || []).length;
+
+  rmkRenderBoard(match.board || []);
+  rmkRenderHand(match[`${myKey}Hand`] || []);
+
+  ['rmkPlaceBtn','rmkDrawBtn','rmkEndTurnBtn'].forEach(id=>{
+    const b = document.getElementById(id);
+    if(b){ b.disabled = !isMyTurn; b.style.opacity = isMyTurn ? '1' : '.45'; }
+  });
+
+  if(match.status === 'finished') rmkShowGameOver(match);
+}
+
+function rmkShowGameOver(match){
+  const overlay = document.getElementById('rmkGameOverOverlay');
+  const roomInfo = store.getRoomInfo();
+  const won = roomInfo && match.winnerId === roomInfo.myId;
+  const titleEl = document.getElementById('rmkGameOverTitle');
+  const resultEl = document.getElementById('rmkVsResult');
+  if(titleEl) titleEl.textContent = won ? '🎉 승리!' : '게임 종료';
+  if(resultEl){
+    resultEl.className = 'tgc-vs-result ' + (won ? 'win' : 'lose');
+    resultEl.textContent = won ? '축하해요, 손패를 모두 내려놨어요!' : '아쉽지만 파트너가 먼저 손패를 다 냈어요';
+  }
+  if(overlay) overlay.style.display = 'flex';
+}
+
+async function rmkPlaceMeld(){
+  const match = store.room && store.room.rummikubMatch;
+  const myKey = rmkMyKey();
+  if(!match || !myKey) return;
+  if(match.turn !== myKey){ toast('상대방 차례예요'); return; }
+  const hand = match[`${myKey}Hand`] || [];
+  const selectedTiles = [...rmkSelectedIds].map(id => hand.find(t=>t.id===id)).filter(Boolean);
+  if(selectedTiles.length < 3){ toast('3장 이상 선택해주세요'); return; }
+  if(!rmkIsValidSet(selectedTiles)){
+    toast('유효한 조합이 아니에요 (같은 숫자+다른색 3장↑, 또는 같은색 연속숫자 3장↑)');
+    return;
+  }
+  const alreadyMelded = match[`${myKey}Melded`];
+  if(!alreadyMelded){
+    const value = rmkSetValue(selectedTiles);
+    if(value < 30){ toast(`첫 조합은 30점 이상이어야 해요 (지금 ${value}점)`); return; }
+  }
+
+  const newHand = hand.filter(t => !rmkSelectedIds.has(t.id));
+  const newBoard = [...(match.board || []), selectedTiles];
+  const patch = {};
+  patch[`rummikubMatch.${myKey}Hand`] = newHand;
+  patch['rummikubMatch.board'] = newBoard;
+  if(!alreadyMelded) patch[`rummikubMatch.${myKey}Melded`] = true;
+
+  if(newHand.length === 0){
+    patch['rummikubMatch.status'] = 'finished';
+    patch['rummikubMatch.winnerId'] = myKey === 'host' ? match.hostId : match.guestId;
+    patch['rummikubMatch.finishedAt'] = Date.now();
+  }
+
+  await rmkUpdateMatch(patch);
+  rmkSelectedIds.clear();
+}
+
+async function rmkDrawTile(){
+  const match = store.room && store.room.rummikubMatch;
+  const myKey = rmkMyKey();
+  if(!match || !myKey) return;
+  if(match.turn !== myKey){ toast('상대방 차례예요'); return; }
+  if(!match.pool || match.pool.length === 0){ toast('더 뽑을 타일이 없어요'); return; }
+  const pool = [...match.pool];
+  const drawn = pool.pop();
+  const hand = [...(match[`${myKey}Hand`] || []), drawn];
+  const nextTurn = myKey === 'host' ? 'guest' : 'host';
+  const patch = {};
+  patch[`rummikubMatch.${myKey}Hand`] = hand;
+  patch['rummikubMatch.pool'] = pool;
+  patch['rummikubMatch.turn'] = nextTurn;
+  await rmkUpdateMatch(patch);
+  rmkSelectedIds.clear();
+}
+
+async function rmkEndTurn(){
+  const match = store.room && store.room.rummikubMatch;
+  const myKey = rmkMyKey();
+  if(!match || !myKey) return;
+  if(match.turn !== myKey){ toast('상대방 차례예요'); return; }
+  const nextTurn = myKey === 'host' ? 'guest' : 'host';
+  await rmkUpdateMatch({ 'rummikubMatch.turn': nextTurn });
+  rmkSelectedIds.clear();
+}
+
+/* ── 루미큐브: 로비(초대/수락) ─────────────────────────────── */
+document.getElementById('gameCardRummikub')?.addEventListener('click', ()=>{
+  document.getElementById('gameListScreen').style.display = 'none';
+  document.getElementById('rummikubRoot').style.display = 'block';
+  document.getElementById('rmkLobby').style.display = 'block';
+  document.getElementById('rmkPlayScreen').style.display = 'none';
+  renderRmkLobby();
+});
+document.getElementById('rmkLobbyCloseBtn')?.addEventListener('click', ()=>{
+  document.getElementById('rummikubRoot').style.display = 'none';
+  document.getElementById('gameListScreen').style.display = 'block';
+});
+document.getElementById('rmkBackToListBtn')?.addEventListener('click', ()=>{
+  document.getElementById('rummikubRoot').style.display = 'none';
+  document.getElementById('gameListScreen').style.display = 'block';
+});
+
+function renderRmkLobby(){
+  const body = document.getElementById('rmkLobbyBody');
+  if(!body) return;
+  const match = store.room && store.room.rummikubMatch;
+  const roomInfo = store.getRoomInfo();
+  const members = getMemberList();
+  const me = members.find(m => roomInfo && m.id === roomInfo.myId) || { name: store.profile.name, avatar: store.profile.avatar };
+  const partner = members.find(m => roomInfo && m.id !== roomInfo.myId);
+
+  if(members.length < 2){
+    body.innerHTML = `<div class="empty-state">파트너와 연결하면 루미큐브 대결을 할 수 있어요</div>`;
+    return;
+  }
+
+  if(!match || match.status === 'finished' || match.status === 'cancelled'){
+    body.innerHTML = `
+      <div class="vs-lobby-title">루미큐브 한 판 어때요?</div>
+      <div class="vs-lobby-avatars"><span class="va">${me.avatar}</span><span class="vs-lobby-vs">VS</span><span class="va">${partner ? partner.avatar : '❔'}</span></div>
+      <div class="vs-lobby-desc">각자 14장씩 나눠 갖고 시작해요. 손패를 먼저 다 내려놓는 사람이 승리!</div>
+      <button class="save-btn ready" id="rmkInviteBtn">대결 신청하기</button>`;
+    document.getElementById('rmkInviteBtn')?.addEventListener('click', rmkInvite);
+    return;
+  }
+
+  if(match.status === 'waiting'){
+    const isHost = match.hostId === (roomInfo && roomInfo.myId);
+    if(isHost){
+      body.innerHTML = `
+        <div class="vs-lobby-title">대결 신청 완료!</div>
+        <div class="vs-lobby-desc">파트너가 수락하면 자동으로 시작돼요 ⏳</div>
+        <button class="tetris-quit-btn" id="rmkCancelBtn" style="width:100%;">신청 취소하기</button>`;
+      document.getElementById('rmkCancelBtn')?.addEventListener('click', rmkCancel);
+    } else {
+      body.innerHTML = `
+        <div class="vs-lobby-title">${match.hostName}님이 루미큐브 대결을 신청했어요!</div>
+        <button class="save-btn ready" id="rmkAcceptBtn">수락하기</button>
+        <button class="tetris-quit-btn" id="rmkDeclineBtn" style="width:100%; margin-top:6px;">거절하기</button>`;
+      document.getElementById('rmkAcceptBtn')?.addEventListener('click', rmkAccept);
+      document.getElementById('rmkDeclineBtn')?.addEventListener('click', rmkCancel);
+    }
+    return;
+  }
+
+  if(match.status === 'playing'){
+    body.innerHTML = `
+      <div class="vs-lobby-title">게임이 진행 중이에요!</div>
+      <button class="save-btn ready" id="rmkRejoinBtn">게임 화면으로 가기</button>`;
+    document.getElementById('rmkRejoinBtn')?.addEventListener('click', ()=>{
+      document.getElementById('rmkLobby').style.display = 'none';
+      document.getElementById('rmkPlayScreen').style.display = 'block';
+      rmkRenderPlayScreen();
+    });
+  }
+}
+
+async function rmkInvite(){
+  const roomInfo = store.getRoomInfo();
+  if(!roomInfo || !firebaseReady) return;
+  try {
+    await db.collection('rooms').doc(roomInfo.code).update({
+      rummikubMatch: {
+        status:'waiting',
+        hostId: roomInfo.myId, hostName: store.profile.name || '나', hostAvatar: store.profile.avatar || '🐻',
+        guestId: null, guestName: null, guestAvatar: null,
+      }
+    });
+  } catch(e){ console.warn('루미큐브 대결 신청 실패:', e); toast('대결 신청에 실패했어요'); }
+}
+async function rmkAccept(){
+  const roomInfo = store.getRoomInfo();
+  const match = store.room && store.room.rummikubMatch;
+  if(!roomInfo || !firebaseReady || !match) return;
+  const deck = rmkShuffle(rmkBuildDeck());
+  const hostHand = deck.splice(0, 14);
+  const guestHand = deck.splice(0, 14);
+  const pool = deck; // 나머지 78장
+  try {
+    await db.collection('rooms').doc(roomInfo.code).update({
+      rummikubMatch: {
+        ...match,
+        guestId: roomInfo.myId, guestName: store.profile.name || '나', guestAvatar: store.profile.avatar || '🐰',
+        status:'playing', turn:'host',
+        hostHand, guestHand, pool, board: [],
+        hostMelded:false, guestMelded:false, winnerId:null, startedAt: Date.now(), finishedAt:null,
+      }
+    });
+  } catch(e){ console.warn('루미큐브 대결 수락 실패:', e); toast('대결 수락에 실패했어요'); }
+}
+async function rmkCancel(){
+  const roomInfo = store.getRoomInfo();
+  if(!roomInfo || !firebaseReady){
+    document.getElementById('rummikubRoot').style.display = 'none';
+    document.getElementById('gameListScreen').style.display = 'block';
+    return;
+  }
+  try { await db.collection('rooms').doc(roomInfo.code).update({ rummikubMatch: null }); }
+  catch(e){ console.warn('루미큐브 취소 실패:', e); }
+  document.getElementById('rummikubRoot').style.display = 'none';
+  document.getElementById('gameListScreen').style.display = 'block';
+}
+
+document.getElementById('rmkPlaceBtn')?.addEventListener('click', rmkPlaceMeld);
+document.getElementById('rmkDrawBtn')?.addEventListener('click', rmkDrawTile);
+document.getElementById('rmkEndTurnBtn')?.addEventListener('click', rmkEndTurn);
+document.getElementById('rmkQuitBtn')?.addEventListener('click', ()=>{
+  document.getElementById('rmkPlayScreen').style.display = 'none';
+  document.getElementById('rmkLobby').style.display = 'block';
+  renderRmkLobby();
+});
+document.getElementById('rmkBackBtn')?.addEventListener('click', ()=>{
+  document.getElementById('rmkGameOverOverlay').style.display = 'none';
+  document.getElementById('rmkPlayScreen').style.display = 'none';
+  document.getElementById('rmkLobby').style.display = 'block';
+  renderRmkLobby();
+});
+
+// Firestore 방 데이터 갱신될 때마다 호출됨 — 대결 초대 감지, 자동 전환, 실시간 화면 갱신
+function rmkHandleMatchUpdate(){
+  const match = store.room && store.room.rummikubMatch;
+  const roomInfo = store.getRoomInfo();
+  if(!match || !roomInfo) return;
+  const iAmParticipant = match.hostId === roomInfo.myId || match.guestId === roomInfo.myId;
+  const rootVisible = document.getElementById('rummikubRoot')?.style.display !== 'none';
+  if(!rootVisible) return;
+
+  const lobbyVisible = document.getElementById('rmkLobby')?.style.display !== 'none';
+  if(lobbyVisible){
+    renderRmkLobby();
+    if(match.status === 'playing' && iAmParticipant){
+      document.getElementById('rmkLobby').style.display = 'none';
+      document.getElementById('rmkPlayScreen').style.display = 'block';
+      rmkRenderPlayScreen();
+    }
+  } else if(iAmParticipant){
+    rmkRenderPlayScreen();
+  }
+}
 
 function initApp(){
   const roomInfo = store.getRoomInfo();

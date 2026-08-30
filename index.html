@@ -258,6 +258,44 @@
   .gc-arrow{ font-size:20px; color:var(--sub); flex-shrink:0; }
   .gc-badge{ font-size:9.5px; font-weight:800; color:var(--sub); background:#f1e4ee; padding:4px 10px; border-radius:999px; flex-shrink:0; }
   .tetris-back-btn{ border:none; background:none; color:var(--sub); font-size:12px; font-weight:800; cursor:pointer; padding:6px 2px; margin-bottom:10px; }
+
+  /* ── 루미큐브 ───────────────────────────────────────────── */
+  .rmk-topbar{ display:flex; align-items:center; gap:6px; margin-bottom:10px; font-size:10px; }
+  .rmk-turn-badge{ background:var(--accent); color:#fff; font-weight:800; font-size:11px; padding:6px 12px; border-radius:999px; }
+  .rmk-turn-badge.waiting{ background:#e3d8ec; color:var(--sub); }
+  .rmk-pool-info{ color:var(--sub); font-weight:700; }
+  .rmk-opp-info{ margin-left:auto; color:var(--sub); font-weight:700; text-align:right; }
+
+  .rmk-board{
+    background:#2b6b4f; border-radius:14px; padding:10px; min-height:120px; margin-bottom:14px;
+    display:flex; flex-wrap:wrap; gap:8px; align-content:flex-start; box-shadow:0 6px 16px rgba(0,0,0,.18);
+  }
+  .rmk-set{ display:flex; gap:3px; background:rgba(255,255,255,.08); border-radius:8px; padding:4px; }
+  .rmk-board-empty{ color:rgba(255,255,255,.6); font-size:11px; padding:8px; }
+
+  .rmk-tile{
+    width:28px; height:38px; border-radius:6px; background:#fffdf6; box-shadow:0 2px 4px rgba(0,0,0,.25);
+    display:flex; align-items:center; justify-content:center; font-family:'Baloo 2'; font-weight:800; font-size:15px;
+    cursor:pointer; user-select:none; flex-shrink:0; border:2px solid transparent; position:relative;
+  }
+  .rmk-tile.red{ color:#e0284d; }
+  .rmk-tile.blue{ color:#2563eb; }
+  .rmk-tile.black{ color:#1a1a2e; }
+  .rmk-tile.yellow{ color:#d97706; }
+  .rmk-tile.joker{ color:#a855f7; font-size:16px; }
+  .rmk-tile.selected{ border-color:var(--accent); transform:translateY(-6px); box-shadow:0 6px 10px rgba(138,63,174,.35); }
+  .rmk-tile.static{ cursor:default; }
+
+  .rmk-hand-section{ margin-bottom:14px; }
+  .rmk-hand-label{ font-size:10.5px; font-weight:800; color:var(--sub); margin-bottom:8px; padding:0 2px; }
+  .rmk-hand{ display:flex; flex-wrap:wrap; gap:5px; background:var(--card); border-radius:14px; padding:10px; box-shadow:0 4px 14px rgba(180,140,190,.14); min-height:48px; }
+
+  .rmk-actions{ display:flex; flex-direction:column; align-items:center; gap:8px; }
+  .rmk-actions-row{ display:flex; gap:8px; width:100%; }
+  .rmk-action-btn{
+    flex:1; border:none; background:var(--card); color:var(--ink); font-size:11px; font-weight:800;
+    padding:11px; border-radius:14px; cursor:pointer; box-shadow:0 3px 8px rgba(180,140,190,.14);
+  }
   .tetris-lb-row{ display:flex; align-items:center; gap:10px; padding:7px 0; border-top:1px solid #f6eef4; }
   .tetris-lb-row:first-child{ border-top:none; }
   .tetris-lb-rank{ width:16px; font-family:'Baloo 2'; font-size:12px; font-weight:800; color:var(--sub); text-align:center; flex-shrink:0; }
@@ -302,6 +340,46 @@
   .tgc-score{ font-family:'Baloo 2'; font-size:30px; font-weight:800; color:var(--accent); margin-bottom:16px; }
   .tgc-vs-result{ font-size:13px; font-weight:800; margin-bottom:14px; padding:10px; border-radius:12px; }
   .tgc-vs-result.win{ background:#eafaf0; color:#22c55e; }
+
+  /* ── 루미큐브 ───────────────────────────────────────────── */
+  .rk-topbar{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+  .rk-opp-info{ display:flex; align-items:center; gap:6px; background:var(--card); border-radius:999px; padding:6px 12px; box-shadow:0 3px 8px rgba(180,140,190,.12); font-size:11px; font-weight:800; }
+  .rk-opp-avatar{ font-size:14px; }
+  .rk-opp-name{ color:var(--ink); }
+  .rk-opp-count{ color:var(--sub); font-size:10px; }
+  .rk-turn-badge{ font-size:10.5px; font-weight:800; padding:6px 12px; border-radius:999px; background:#fbf0fb; color:var(--accent); }
+  .rk-turn-badge.waiting{ background:#f1e4ee; color:var(--sub); }
+
+  .rk-board-wrap{ background:#1f6b4a; border-radius:14px; padding:10px; min-height:120px; max-height:34vh; overflow-y:auto; box-shadow:inset 0 2px 8px rgba(0,0,0,.25); margin-bottom:8px; }
+  .rk-board{ display:flex; flex-direction:column; gap:8px; }
+  .rk-set{ display:flex; flex-wrap:wrap; gap:3px; background:rgba(255,255,255,.08); border-radius:8px; padding:5px; min-height:34px; }
+  .rk-set.empty{ border:1.5px dashed rgba(255,255,255,.3); background:none; }
+  .rk-set.invalid{ box-shadow:0 0 0 2px #ff6b6b inset; }
+
+  .rk-tile{
+    width:26px; height:34px; border-radius:5px; background:#fdf8ef; display:flex; align-items:center; justify-content:center;
+    font-family:'Baloo 2'; font-weight:800; font-size:14px; box-shadow:0 2px 4px rgba(0,0,0,.3); cursor:pointer;
+    border:2px solid transparent; flex-shrink:0; user-select:none;
+  }
+  .rk-tile.selected{ border-color:#8a3fae; transform:translateY(-4px); box-shadow:0 6px 10px rgba(0,0,0,.35); }
+  .rk-tile.joker{ background:linear-gradient(135deg,#fff,#f3d9ff); }
+  .rk-tile.c-red{ color:#e03131; }
+  .rk-tile.c-blue{ color:#1971c2; }
+  .rk-tile.c-black{ color:#212529; }
+  .rk-tile.c-yellow{ color:#e8a800; }
+
+  .rk-msg{ font-size:10.5px; font-weight:800; color:#e0405f; text-align:center; min-height:14px; margin-bottom:6px; }
+
+  .rk-actions{ display:flex; gap:8px; margin-bottom:10px; }
+  .rk-action-btn{
+    flex:1; border:none; background:var(--card); color:var(--accent); font-size:11px; font-weight:800;
+    padding:9px; border-radius:12px; cursor:pointer; box-shadow:0 3px 8px rgba(180,140,190,.12);
+  }
+
+  .rk-rack-wrap{ background:#3a2c1f; border-radius:14px; padding:10px; min-height:70px; box-shadow:inset 0 2px 8px rgba(0,0,0,.3); margin-bottom:10px; }
+  .rk-rack{ display:flex; flex-wrap:wrap; gap:3px; justify-content:center; }
+
+  .rk-bottom-actions{ display:flex; flex-direction:column; gap:8px; }
   .tgc-vs-result.lose{ background:#fff0f0; color:#e0405f; }
 
   /* 대결모드: 상대방 정보가 위가 아니라 사이드 컬럼(오른쪽)에 작게 들어가요.
@@ -458,10 +536,52 @@
         <div class="gc-info"><div class="gc-name">테트리스</div><div class="gc-desc">클래식 블록 쌓기, 혼자 또는 실시간 대결로</div></div>
         <div class="gc-arrow">›</div>
       </div>
-      <div class="game-card disabled" id="gameCardRummikub">
+      <div class="game-card" id="gameCardRummikub">
         <div class="gc-icon">🀄</div>
-        <div class="gc-info"><div class="gc-name">루미큐브</div><div class="gc-desc">숫자 타일 맞추기</div></div>
-        <div class="gc-badge">준비중</div>
+        <div class="gc-info"><div class="gc-name">루미큐브</div><div class="gc-desc">숫자 타일 맞추기, 실시간 대결</div></div>
+        <div class="gc-arrow">›</div>
+      </div>
+    </div>
+
+    <!-- 루미큐브 -->
+    <div id="rummikubRoot" style="display:none;">
+      <button class="tetris-back-btn" id="rmkBackToListBtn">‹ 게임 목록으로</button>
+
+      <div id="rmkLobby">
+        <div class="tetris-lb-card" id="rmkLobbyBody"></div>
+        <button class="tetris-quit-btn" id="rmkLobbyCloseBtn">✕ 닫기</button>
+      </div>
+
+      <div id="rmkPlayScreen" style="display:none;">
+        <div class="rmk-topbar">
+          <div class="rmk-turn-badge" id="rmkTurnBadge">내 차례</div>
+          <div class="rmk-pool-info">남은 타일 <b id="rmkPoolCount">0</b>개</div>
+          <div class="rmk-opp-info"><span id="rmkOppAvatar">🐰</span> <span id="rmkOppName">파트너</span> 손패 <b id="rmkOppCount">14</b>개</div>
+        </div>
+
+        <div class="rmk-board" id="rmkBoard"></div>
+
+        <div class="rmk-hand-section">
+          <div class="rmk-hand-label">내 손패 (<span id="rmkHandCount">14</span>장) — 타일을 눌러서 선택</div>
+          <div class="rmk-hand" id="rmkHand"></div>
+        </div>
+
+        <div class="rmk-actions">
+          <button class="tctrl-btn tctrl-wide" id="rmkPlaceBtn">선택한 타일 내려놓기</button>
+          <div class="rmk-actions-row">
+            <button class="rmk-action-btn" id="rmkDrawBtn">🀫 타일 뽑고 턴 넘기기</button>
+            <button class="rmk-action-btn" id="rmkEndTurnBtn">✅ 턴 마치기</button>
+          </div>
+          <button class="tetris-quit-btn" id="rmkQuitBtn">✕ 그만하기</button>
+        </div>
+
+        <div class="tetris-gameover" id="rmkGameOverOverlay" style="display:none;">
+          <div class="tetris-gameover-card">
+            <div class="tgc-title" id="rmkGameOverTitle">게임 종료</div>
+            <div class="tgc-vs-result" id="rmkVsResult" style="display:block;"></div>
+            <button class="tetris-quit-btn" id="rmkBackBtn">닫기</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -533,6 +653,64 @@
     </div>
 
     </div><!-- /#tetrisRoot -->
+
+    <!-- ═══ 루미큐브 ═══ -->
+    <div id="rummikubRoot" style="display:none;">
+      <button class="tetris-back-btn" id="rkBackToListBtn">‹ 게임 목록으로</button>
+
+      <div id="rkStartScreen">
+        <div class="tetris-lb-card">
+          <div class="field-label">🀄 루미큐브</div>
+          <div class="tetris-hint" style="text-align:left; padding:2px 2px 0;">숫자 타일로 조합(런/그룹)을 만들어서 손에 든 타일을 먼저 다 내려놓는 사람이 승리해요. 보드의 기존 타일을 재배치해서 새 조합을 만드는 것도 가능해요.</div>
+        </div>
+        <button class="save-btn ready" id="rkVersusOpenBtn">⚔️ 파트너와 대결</button>
+      </div>
+
+      <div id="rkVersusLobby" style="display:none;">
+        <div class="tetris-lb-card" id="rkVersusLobbyBody"></div>
+        <button class="tetris-quit-btn" id="rkVersusCloseBtn">✕ 닫기</button>
+      </div>
+
+      <div id="rkPlayScreen" style="display:none;">
+        <div class="rk-topbar">
+          <div class="rk-opp-info">
+            <span class="rk-opp-avatar" id="rkOppAvatar">🐰</span>
+            <span class="rk-opp-name" id="rkOppName">파트너</span>
+            <span class="rk-opp-count" id="rkOppCount">타일 14개</span>
+          </div>
+          <div class="rk-turn-badge" id="rkTurnBadge">내 차례</div>
+        </div>
+
+        <div class="rk-board-wrap">
+          <div class="rk-board" id="rkBoard"></div>
+        </div>
+
+        <div class="rk-msg" id="rkMsg"></div>
+
+        <div class="rk-actions">
+          <button class="rk-action-btn" id="rkNewSetBtn">+ 새 조합</button>
+          <button class="rk-action-btn" id="rkSortBtn">↕ 정렬</button>
+          <button class="rk-action-btn" id="rkUndoBtn">되돌리기</button>
+        </div>
+
+        <div class="rk-rack-wrap">
+          <div class="rk-rack" id="rkRack"></div>
+        </div>
+
+        <div class="rk-bottom-actions">
+          <button class="tctrl-btn tctrl-wide" id="rkDrawBtn">🎲 타일 뽑고 턴 넘기기</button>
+          <button class="save-btn ready" id="rkEndTurnBtn">✓ 턴 종료</button>
+        </div>
+      </div>
+
+      <div class="tetris-gameover" id="rkGameOverOverlay" style="display:none;">
+        <div class="tetris-gameover-card">
+          <div class="tgc-title" id="rkGameOverTitle">게임 종료</div>
+          <div class="tgc-vs-result" id="rkGameOverResult"></div>
+          <button class="save-btn ready" id="rkBackToStartBtn">확인</button>
+        </div>
+      </div>
+    </div><!-- /#rummikubRoot -->
   </div>
 
   <!-- ═══ 설정 ═══ -->
