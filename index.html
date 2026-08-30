@@ -264,6 +264,7 @@
   .rmk-turn-badge{ background:var(--accent); color:#fff; font-weight:800; font-size:11px; padding:6px 12px; border-radius:999px; }
   .rmk-turn-badge.waiting{ background:#e3d8ec; color:var(--sub); }
   .rmk-pool-info{ color:var(--sub); font-weight:700; }
+  .rmk-timer-badge{ font-size:10.5px; font-weight:800; color:var(--accent); background:#fbf0fb; padding:5px 9px; border-radius:999px; }
   .rmk-opp-info{ margin-left:auto; color:var(--sub); font-weight:700; text-align:right; }
 
   .rmk-board{
@@ -271,6 +272,7 @@
     display:flex; flex-wrap:wrap; gap:8px; align-content:flex-start; box-shadow:0 6px 16px rgba(0,0,0,.18);
   }
   .rmk-set{ display:flex; gap:3px; background:rgba(255,255,255,.08); border-radius:8px; padding:4px; }
+  .rmk-set.invalid{ box-shadow:0 0 0 2px #ef4444 inset; }
   .rmk-board-empty{ color:rgba(255,255,255,.6); font-size:11px; padding:8px; }
 
   .rmk-tile{
@@ -284,6 +286,9 @@
   .rmk-tile.yellow{ color:#d97706; }
   .rmk-tile.joker{ color:#a855f7; font-size:16px; }
   .rmk-tile.selected{ border-color:var(--accent); transform:translateY(-6px); box-shadow:0 6px 10px rgba(138,63,174,.35); }
+  .rmk-tile.playable{ box-shadow:0 0 0 2px #22c55e; }
+  .rmk-tile.playable.selected{ box-shadow:0 6px 10px rgba(138,63,174,.35), 0 0 0 2px #22c55e; }
+  .rmk-hand-gap{ width:14px; flex-shrink:0; }
   .rmk-tile.static{ cursor:default; }
 
   .rmk-hand-section{ margin-bottom:14px; }
@@ -303,6 +308,10 @@
   .rmk-action-btn{
     flex:1; border:none; background:var(--card); color:var(--ink); font-size:11px; font-weight:800;
     padding:11px; border-radius:14px; cursor:pointer; box-shadow:0 3px 8px rgba(180,140,190,.14);
+  }
+  .rmk-cancel-btn{
+    border:none; background:none; color:var(--sub); font-size:10.5px; font-weight:800; cursor:pointer;
+    padding:4px; text-decoration:underline;
   }
   .tetris-lb-row{ display:flex; align-items:center; gap:10px; padding:7px 0; border-top:1px solid #f6eef4; }
   .tetris-lb-row:first-child{ border-top:none; }
@@ -563,6 +572,7 @@
       <div id="rmkPlayScreen" style="display:none;">
         <div class="rmk-topbar">
           <div class="rmk-turn-badge" id="rmkTurnBadge">내 차례</div>
+          <div class="rmk-timer-badge">⏱️ <b id="rmkTimer">15</b>초</div>
           <div class="rmk-pool-info">남은 타일 <b id="rmkPoolCount">0</b>개</div>
           <div class="rmk-opp-info"><span id="rmkOppAvatar">🐰</span> <span id="rmkOppName">파트너</span> 손패 <b id="rmkOppCount">14</b>개</div>
         </div>
@@ -581,11 +591,12 @@
         </div>
 
         <div class="rmk-actions">
-          <button class="tctrl-btn tctrl-wide" id="rmkPlaceBtn">선택한 타일 내려놓기</button>
+          <button class="tctrl-btn tctrl-wide" id="rmkPlaceBtn">선택한 타일 조합으로 묶기</button>
           <div class="rmk-actions-row">
             <button class="rmk-action-btn" id="rmkDrawBtn">🀫 타일 뽑고 턴 넘기기</button>
-            <button class="rmk-action-btn" id="rmkEndTurnBtn">✅ 턴 마치기</button>
+            <button class="rmk-action-btn" id="rmkEndTurnBtn" style="display:none;">✅ 턴 마치기(제출)</button>
           </div>
+          <button class="rmk-cancel-btn" id="rmkCancelBtn2" style="display:none;">↩️ 이번 턴 되돌리기</button>
           <button class="tetris-quit-btn" id="rmkQuitBtn">✕ 그만하기</button>
         </div>
 

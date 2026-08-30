@@ -14,7 +14,7 @@
 // 먹통이 돼요.
 let db = null;
 let firebaseReady = false;
-console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix49 (루미큐브: 저장실패 버그 수정(nested array) + 정렬 버튼 2종 추가)', 'color:#8a3fae;font-weight:bold;');
+console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix51 (루미큐브: 낼 수 있는 조합 자동 정렬 + 꾹눌러 세트 한번에 선택)', 'color:#8a3fae;font-weight:bold;');
 try {
   firebase.initializeApp(firebaseConfig);
   db = firebase.firestore();
@@ -2051,7 +2051,6 @@ renderTetrisLeaderboard();
    실제 루미큐브처럼 "서로 안 보는 게 규칙"인 셈이라, 정직하게 플레이해주세요 :)
    ============================================================ */
 const RMK_COLORS = ['red','blue','black','yellow'];
-let rmkSelectedIds = new Set();
 
 function rmkBuildDeck(){
   const deck = [];
@@ -2126,15 +2125,18 @@ function rmkOtherKey(){
 async function rmkUpdateMatch(patch){
   const roomInfo = store.getRoomInfo();
   if(!roomInfo || !firebaseReady) return;
+  patch['rummikubMatch.lastActionAt'] = Date.now(); // 무동작 감지용 — 액션이 있을 때마다 자동 갱신
   try { await db.collection('rooms').doc(roomInfo.code).update(patch); }
   catch(e){ console.warn('루미큐브 동기화 실패:', e); toast('저장에 실패했어요'); }
 }
 
-function rmkTileHTML(tile, selected, staticTile){
+function rmkTileHTML(tile, opts){
+  opts = opts || {};
   const cls = ['rmk-tile'];
   cls.push(tile.isJoker ? 'joker' : tile.color);
-  if(selected) cls.push('selected');
-  if(staticTile) cls.push('static');
+  if(opts.picked) cls.push('selected');
+  if(opts.playable) cls.push('playable');
+  if(!opts.clickable) cls.push('static');
   const label = tile.isJoker ? '★' : tile.number;
   return `<div class="${cls.join(' ')}" data-tile-id="${tile.id}">${label}</div>`;
 }
@@ -2145,11 +2147,9 @@ function rmkSortHand(hand){
     if(a.isJoker) return 1;
     if(b.isJoker) return -1;
     if(rmkSortMode === 'number'){
-      // 숫자 순 오름차순 (색 무관) — 같은 숫자면 색상 순서로 보조 정렬
       if(a.number !== b.number) return a.number - b.number;
       return RMK_COLORS.indexOf(a.color) - RMK_COLORS.indexOf(b.color);
     }
-    // 색상별로 묶고, 같은 색 안에서는 숫자 오름차순
     if(a.color !== b.color) return RMK_COLORS.indexOf(a.color) - RMK_COLORS.indexOf(b.color);
     return a.number - b.number;
   });
@@ -2166,32 +2166,351 @@ document.getElementById('rmkSortNumberBtn')?.addEventListener('click', ()=>{
   document.getElementById('rmkSortColorBtn')?.classList.remove('active');
   rmkRenderPlayScreen();
 });
-function rmkRenderBoard(board){
+
+// 지금 손패 안에서 "바로 낼 수 있는 조합"을 하나 찾아줘요 (그룹 우선, 없으면 런).
+// 여러 개 있어도 일단 하나만 찾아서 앞으로 빼주는 용도예요.
+function rmkFindPlayableSet(hand){
+  const byNumber = {};
+  hand.forEach(t=>{
+    if(t.isJoker) return;
+    (byNumber[t.number] = byNumber[t.number] || []).push(t);
+  });
+  for(const num in byNumber){
+    const seen = new Set();
+    const uniqueColors = [];
+    byNumber[num].forEach(t=>{ if(!seen.has(t.color)){ seen.add(t.color); uniqueColors.push(t); } });
+    if(uniqueColors.length >= 3) return uniqueColors.slice(0, 4).map(t=>t.id);
+  }
+  const byColor = {};
+  hand.forEach(t=>{
+    if(t.isJoker) return;
+    (byColor[t.color] = byColor[t.color] || []).push(t);
+  });
+  for(const color in byColor){
+    const seenNum = new Set();
+    const uniqueByNum = [];
+    [...byColor[color]].sort((a,b)=>a.number-b.number).forEach(t=>{
+      if(!seenNum.has(t.number)){ seenNum.add(t.number); uniqueByNum.push(t); }
+    });
+    let run = [uniqueByNum[0]];
+    for(let i=1; i<uniqueByNum.length; i++){
+      if(uniqueByNum[i].number === run[run.length-1].number + 1){
+        run.push(uniqueByNum[i]);
+        if(run.length >= 3) return run.map(t=>t.id);
+      } else {
+        run = [uniqueByNum[i]];
+      }
+    }
+  }
+  return null;
+}
+
+/* ============================================================
+   루미큐브 2단계: 보드 재배치(공식 룰)
+   ------------------------------------------------------------
+   방식: 턴이 시작되면 지금 서버(Firestore)에 있는 보드+손패를 그대로
+   "작업용 사본"(rmkWorking)으로 복사해둬요. 손패든 보드든 타일을 탭해서
+   "픽업"하고, 픽업한 타일들을 모아 "조합으로 묶기"를 누르면 그 자리에서
+   새 조합이 만들어져요(로컬에서만, 아직 저장 안 됨). 이렇게 여러 번
+   재배치하다가 "턴 마치기"를 누르면, 그 시점에 보드 전체가 다 유효한지
+   검사하고 통과해야만 실제로 저장돼요. "취소"를 누르면 이번 턴에 만졌던
+   내용을 전부 되돌려요.
+   ============================================================ */
+let rmkWorking = null;       // { board:[{tiles}], hand:[...] } 이번 턴 작업용 사본
+let rmkPickedIds = [];       // 픽업(선택)한 타일 id들, 고른 순서 그대로 (런 순서 판단용)
+let rmkTurnHasChanges = false;
+let rmkTurnMeldValue = 0;    // 첫 멜드 전이면, 이번 턴에 만든 조합들의 합산 점수
+let rmkLastSeenTurn = null;
+let rmkTurnTimerInterval = null;
+let rmkTurnTimerRemaining = 15;
+let rmkInactivityCheckInterval = null;
+
+function rmkCloneMatchIntoWorking(match, myKey){
+  rmkWorking = {
+    board: (match.board || []).map(s => ({ tiles: [...(s.tiles||[])] })),
+    hand: [...(match[`${myKey}Hand`] || [])],
+  };
+  rmkPickedIds = [];
+  rmkTurnHasChanges = false;
+  rmkTurnMeldValue = 0;
+}
+
+function rmkFindInWorking(tileId){
+  const hIdx = rmkWorking.hand.findIndex(t => t.id === tileId);
+  if(hIdx >= 0) return { tile: rmkWorking.hand[hIdx], origin:'hand', hIdx };
+  for(let si=0; si<rmkWorking.board.length; si++){
+    const tIdx = rmkWorking.board[si].tiles.findIndex(t => t.id === tileId);
+    if(tIdx >= 0) return { tile: rmkWorking.board[si].tiles[tIdx], origin:'board', setIdx: si, tIdx };
+  }
+  return null;
+}
+
+function rmkTogglePick(tileId){
+  const idx = rmkPickedIds.indexOf(tileId);
+  if(idx >= 0) rmkPickedIds.splice(idx, 1);
+  else rmkPickedIds.push(tileId);
+  rmkRenderPlayScreen();
+}
+
+// 픽업한 타일들을 모아서 새 조합으로 묶어요 (아직 저장은 안 되고, 작업용 사본만 바뀜)
+function rmkFormSetFromPicked(){
+  const match = store.room && store.room.rummikubMatch;
+  const myKey = rmkMyKey();
+  if(!match || !myKey || !rmkWorking) return;
+  if(rmkPickedIds.length < 3){ toast('3장 이상 선택해주세요'); return; }
+
+  const melded = match[`${myKey}Melded`];
+  const picks = rmkPickedIds.map(id => rmkFindInWorking(id)).filter(Boolean);
+  if(picks.length !== rmkPickedIds.length){ toast('선택한 타일을 찾을 수 없어요'); return; }
+
+  if(!melded && picks.some(p => p.origin === 'board')){
+    toast('첫 조합(30점) 전에는 보드의 타일을 쓸 수 없어요, 내 손패로만 만들어주세요');
+    return;
+  }
+
+  const tiles = picks.map(p => p.tile);
+  if(!rmkIsValidSet(tiles)){
+    toast('유효한 조합이 아니에요 (같은 숫자+다른색 3장↑, 또는 같은색 연속숫자 3장↑)');
+    return;
+  }
+
+  // 원래 자리에서 제거 (뒤 인덱스부터 지워야 앞 인덱스가 안 밀림)
+  const boardRemovals = picks.filter(p=>p.origin==='board').sort((a,b)=> b.tIdx - a.tIdx);
+  boardRemovals.forEach(p => rmkWorking.board[p.setIdx].tiles.splice(p.tIdx, 1));
+  const handIds = new Set(picks.filter(p=>p.origin==='hand').map(p=>p.tile.id));
+  rmkWorking.hand = rmkWorking.hand.filter(t => !handIds.has(t.id));
+  // 다 비워진(0장) 세트는 삭제. 1~2장만 남은 세트는 "미완성"으로 남겨두고, 턴 마칠 때 검증해서 걸러요.
+  rmkWorking.board = rmkWorking.board.filter(s => s.tiles.length > 0);
+
+  rmkWorking.board.push({ tiles });
+  if(!melded) rmkTurnMeldValue += rmkSetValue(tiles);
+  rmkTurnHasChanges = true;
+  rmkPickedIds = [];
+  rmkRenderPlayScreen();
+}
+
+function rmkCancelWorkingChanges(){
+  const match = store.room && store.room.rummikubMatch;
+  const myKey = rmkMyKey();
+  if(!match || !myKey) return;
+  rmkCloneMatchIntoWorking(match, myKey);
+  toast('이번 턴에 만졌던 내용을 되돌렸어요');
+  rmkRenderPlayScreen();
+}
+
+async function rmkCommitTurn(){
+  const match = store.room && store.room.rummikubMatch;
+  const myKey = rmkMyKey();
+  if(!match || !myKey || !rmkWorking) return;
+  if(match.turn !== myKey){ toast('상대방 차례예요'); return; }
+  if(!rmkTurnHasChanges){ toast('아직 만든 조합이 없어요'); return; }
+
+  const invalid = rmkWorking.board.find(s => !rmkIsValidSet(s.tiles));
+  if(invalid){
+    toast('아직 정리되지 않은 조합이 있어요 (빨간 테두리 확인)');
+    rmkRenderPlayScreen();
+    return;
+  }
+  const melded = match[`${myKey}Melded`];
+  if(!melded && rmkTurnMeldValue < 30){
+    toast(`첫 조합은 합쳐서 30점 이상이어야 해요 (지금 ${rmkTurnMeldValue}점)`);
+    return;
+  }
+
+  const nextTurn = myKey === 'host' ? 'guest' : 'host';
+  const patch = {};
+  patch[`rummikubMatch.${myKey}Hand`] = rmkWorking.hand;
+  patch['rummikubMatch.board'] = rmkWorking.board;
+  patch['rummikubMatch.turn'] = nextTurn;
+  if(!melded) patch[`rummikubMatch.${myKey}Melded`] = true;
+
+  if(rmkWorking.hand.length === 0){
+    patch['rummikubMatch.status'] = 'finished';
+    patch['rummikubMatch.winnerId'] = myKey === 'host' ? match.hostId : match.guestId;
+    patch['rummikubMatch.finishedAt'] = Date.now();
+    patch['rummikubMatch.endReason'] = 'win';
+  }
+
+  await rmkUpdateMatch(patch);
+  rmkTurnHasChanges = false;
+  rmkPickedIds = [];
+}
+
+async function rmkDrawTile(){
+  const match = store.room && store.room.rummikubMatch;
+  const myKey = rmkMyKey();
+  if(!match || !myKey) return;
+  if(match.turn !== myKey){ toast('상대방 차례예요'); return; }
+  if(rmkTurnHasChanges){ toast('이미 조합을 만들었어요, 턴을 마쳐주세요'); return; }
+  if(!match.pool || match.pool.length === 0){ toast('더 뽑을 타일이 없어요'); return; }
+  const pool = [...match.pool];
+  const drawn = pool.pop();
+  const hand = [...(match[`${myKey}Hand`] || []), drawn];
+  const nextTurn = myKey === 'host' ? 'guest' : 'host';
+  const patch = {};
+  patch[`rummikubMatch.${myKey}Hand`] = hand;
+  patch['rummikubMatch.pool'] = pool;
+  patch['rummikubMatch.turn'] = nextTurn;
+  await rmkUpdateMatch(patch);
+}
+
+/* ── 턴 타이머(15초) + 무동작 자동종료(1분) ─────────────────── */
+function rmkStopTimers(){
+  clearInterval(rmkTurnTimerInterval);
+  clearInterval(rmkInactivityCheckInterval);
+}
+function rmkStartTurnTimer(){
+  clearInterval(rmkTurnTimerInterval);
+  rmkTurnTimerRemaining = 15;
+  rmkUpdateTimerDisplay();
+  rmkTurnTimerInterval = setInterval(()=>{
+    rmkTurnTimerRemaining--;
+    rmkUpdateTimerDisplay();
+    if(rmkTurnTimerRemaining <= 0){
+      clearInterval(rmkTurnTimerInterval);
+      rmkHandleTimeout();
+    }
+  }, 1000);
+}
+function rmkUpdateTimerDisplay(){
+  const el = document.getElementById('rmkTimer');
+  if(el) el.textContent = Math.max(0, rmkTurnTimerRemaining);
+}
+async function rmkHandleTimeout(){
+  const match = store.room && store.room.rummikubMatch;
+  const myKey = rmkMyKey();
+  if(!match || !myKey || match.status !== 'playing' || match.turn !== myKey) return;
+  toast('⏱️ 시간 초과! 자동으로 턴이 넘어가요');
+  if(rmkTurnHasChanges){
+    // 만들다 만 조합이 있으면 안전하게 되돌리고 뽑기로 넘어가요
+    rmkCancelWorkingChanges();
+  }
+  await rmkDrawTile();
+}
+function rmkStartInactivityWatch(){
+  clearInterval(rmkInactivityCheckInterval);
+  rmkInactivityCheckInterval = setInterval(async ()=>{
+    const match = store.room && store.room.rummikubMatch;
+    if(!match || match.status !== 'playing') return;
+    const last = match.lastActionAt || match.startedAt || 0;
+    if(Date.now() - last > 60000){
+      await rmkEndDueToInactivity();
+    }
+  }, 5000);
+}
+async function rmkEndDueToInactivity(){
+  const roomInfo = store.getRoomInfo();
+  if(!roomInfo || !firebaseReady) return;
+  try {
+    const ref = db.collection('rooms').doc(roomInfo.code);
+    const snap = await ref.get();
+    if(!snap.exists) return;
+    const freshMatch = snap.data().rummikubMatch;
+    if(!freshMatch || freshMatch.status !== 'playing') return;
+    await ref.update({
+      'rummikubMatch.status': 'finished',
+      'rummikubMatch.winnerId': null,
+      'rummikubMatch.finishedAt': Date.now(),
+      'rummikubMatch.endReason': 'inactivity',
+    });
+  } catch(e){ console.warn('루미큐브 무동작 종료 실패:', e); }
+}
+async function rmkForfeit(){
+  const roomInfo = store.getRoomInfo();
+  const myKey = rmkMyKey();
+  const otherKey = rmkOtherKey();
+  if(!roomInfo || !firebaseReady || !myKey) return;
+  try {
+    const ref = db.collection('rooms').doc(roomInfo.code);
+    const snap = await ref.get();
+    if(!snap.exists) return;
+    const freshMatch = snap.data().rummikubMatch;
+    if(!freshMatch || freshMatch.status !== 'playing') return;
+    await ref.update({
+      'rummikubMatch.status': 'finished',
+      'rummikubMatch.winnerId': otherKey === 'host' ? freshMatch.hostId : freshMatch.guestId,
+      'rummikubMatch.finishedAt': Date.now(),
+      'rummikubMatch.endReason': 'forfeit',
+    });
+  } catch(e){ console.warn('루미큐브 기권 처리 실패:', e); }
+}
+
+function rmkRenderBoard(){
   const el = document.getElementById('rmkBoard');
-  if(!el) return;
-  if(!board || board.length === 0){
+  if(!el || !rmkWorking) return;
+  const match = store.room && store.room.rummikubMatch;
+  const myKey = rmkMyKey();
+  const isMyTurn = match && match.turn === myKey;
+  const melded = match && match[`${myKey}Melded`];
+  const canManipulate = isMyTurn && melded; // 첫 멜드 전엔 보드 손 못 댐
+
+  if(rmkWorking.board.length === 0){
     el.innerHTML = `<div class="rmk-board-empty">아직 보드에 놓인 조합이 없어요</div>`;
     return;
   }
-  // board는 [{tiles:[...]}, {tiles:[...]}] 형태예요. Firestore는 "배열 안에 배열"을
-  // 직접 저장할 수 없어서(nested array 금지), 각 세트를 객체로 한 겹 감싸둔 거예요.
-  el.innerHTML = board.map(setObj => `<div class="rmk-set">${(setObj.tiles||[]).map(t=>rmkTileHTML(t,false,true)).join('')}</div>`).join('');
-}
-function rmkRenderHand(hand){
-  const el = document.getElementById('rmkHand');
-  if(!el) return;
-  const sorted = rmkSortHand(hand);
-  el.innerHTML = sorted.map(t => rmkTileHTML(t, rmkSelectedIds.has(t.id), false)).join('');
-  el.querySelectorAll('.rmk-tile').forEach(elm=>{
-    elm.addEventListener('click', ()=>{
-      const id = elm.dataset.tileId;
-      if(rmkSelectedIds.has(id)) rmkSelectedIds.delete(id);
-      else rmkSelectedIds.add(id);
-      rmkRenderPlayScreen();
+  el.innerHTML = rmkWorking.board.map(setObj=>{
+    const valid = rmkIsValidSet(setObj.tiles);
+    const tilesHTML = setObj.tiles.map(t => rmkTileHTML(t, { picked: rmkPickedIds.includes(t.id), clickable: canManipulate })).join('');
+    return `<div class="rmk-set${valid?'':' invalid'}">${tilesHTML}</div>`;
+  }).join('');
+
+  if(canManipulate){
+    el.querySelectorAll('.rmk-tile').forEach(elm=>{
+      elm.addEventListener('click', ()=> rmkTogglePick(elm.dataset.tileId));
     });
-  });
+  }
+}
+function rmkRenderHand(){
+  const el = document.getElementById('rmkHand');
+  if(!el || !rmkWorking) return;
+  const match = store.room && store.room.rummikubMatch;
+  const myKey = rmkMyKey();
+  const isMyTurn = match && match.turn === myKey;
+  const sorted = rmkSortHand(rmkWorking.hand);
+
+  // 지금 낼 수 있는 조합이 있으면 맨 앞으로 빼고, 나머지 패랑 한 칸 띄워줘요.
+  const playableIds = rmkFindPlayableSet(sorted);
+  let html = '';
+  if(playableIds && playableIds.length){
+    const playableSet = new Set(playableIds);
+    const front = sorted.filter(t => playableSet.has(t.id));
+    const rest = sorted.filter(t => !playableSet.has(t.id));
+    html += front.map(t => rmkTileHTML(t, { picked: rmkPickedIds.includes(t.id), clickable:isMyTurn, playable:true })).join('');
+    html += `<div class="rmk-hand-gap"></div>`;
+    html += rest.map(t => rmkTileHTML(t, { picked: rmkPickedIds.includes(t.id), clickable:isMyTurn })).join('');
+  } else {
+    html = sorted.map(t => rmkTileHTML(t, { picked: rmkPickedIds.includes(t.id), clickable:isMyTurn })).join('');
+  }
+  el.innerHTML = html;
+
+  if(isMyTurn){
+    el.querySelectorAll('.rmk-tile').forEach(elm=>{
+      const tileId = elm.dataset.tileId;
+      let pressTimer = null;
+      let longPressHandled = false;
+      const clearPress = ()=>{ clearTimeout(pressTimer); pressTimer = null; };
+      elm.addEventListener('pointerdown', ()=>{
+        longPressHandled = false;
+        pressTimer = setTimeout(()=>{
+          // 꾹 누르기: 이 타일이 "낼 수 있는 조합"의 일부일 때만 그 세트 전체를 한번에 선택해요.
+          // 조합에 안 속한 타일이면 꾹 눌러도 특별한 동작 없이, 뗄 때 평소처럼 한 장만 토글돼요.
+          if(playableIds && playableIds.includes(tileId)){
+            longPressHandled = true;
+            playableIds.forEach(id=>{ if(!rmkPickedIds.includes(id)) rmkPickedIds.push(id); });
+            rmkRenderPlayScreen();
+          }
+        }, 420);
+      });
+      elm.addEventListener('pointerup', ()=>{
+        clearPress();
+        if(!longPressHandled) rmkTogglePick(tileId); // 짧게 탭했거나, 꾹 눌러도 조합이 아니었으면 한 장만 토글
+      });
+      elm.addEventListener('pointerleave', clearPress);
+      elm.addEventListener('pointercancel', clearPress);
+    });
+  }
   const countEl = document.getElementById('rmkHandCount');
-  if(countEl) countEl.textContent = hand.length;
+  if(countEl) countEl.textContent = rmkWorking.hand.length;
 }
 
 function rmkRenderPlayScreen(){
@@ -2200,6 +2519,14 @@ function rmkRenderPlayScreen(){
   const myKey = rmkMyKey();
   const otherKey = rmkOtherKey();
   if(!myKey || !otherKey) return;
+
+  // 상대가 방금 턴을 넘겼거나, 내가 방금 시작했으면 작업용 사본을 새로 떠와요.
+  if(match.turn !== rmkLastSeenTurn){
+    rmkLastSeenTurn = match.turn;
+    rmkCloneMatchIntoWorking(match, myKey);
+    if(match.turn === myKey) rmkStartTurnTimer(); else { clearInterval(rmkTurnTimerInterval); rmkUpdateTimerDisplay(); }
+  }
+  if(!rmkWorking) rmkCloneMatchIntoWorking(match, myKey);
 
   const isMyTurn = match.turn === myKey;
   const turnBadge = document.getElementById('rmkTurnBadge');
@@ -2216,92 +2543,48 @@ function rmkRenderPlayScreen(){
   if(oppNameEl) oppNameEl.textContent = otherKey === 'host' ? match.hostName : match.guestName;
   if(oppCountEl) oppCountEl.textContent = (match[`${otherKey}Hand`] || []).length;
 
-  rmkRenderBoard(match.board || []);
-  rmkRenderHand(match[`${myKey}Hand`] || []);
+  rmkRenderBoard();
+  rmkRenderHand();
 
-  ['rmkPlaceBtn','rmkDrawBtn','rmkEndTurnBtn'].forEach(id=>{
-    const b = document.getElementById(id);
-    if(b){ b.disabled = !isMyTurn; b.style.opacity = isMyTurn ? '1' : '.45'; }
-  });
+  const placeBtn = document.getElementById('rmkPlaceBtn');
+  const drawBtn = document.getElementById('rmkDrawBtn');
+  const endBtn = document.getElementById('rmkEndTurnBtn');
+  if(placeBtn){ placeBtn.disabled = !isMyTurn; placeBtn.style.opacity = isMyTurn ? '1' : '.45'; placeBtn.textContent = '선택한 타일 조합으로 묶기'; }
+  if(drawBtn && endBtn){
+    if(rmkTurnHasChanges){
+      drawBtn.style.display = 'none';
+      endBtn.style.display = 'block';
+      endBtn.textContent = '✅ 턴 마치기(제출)';
+    } else {
+      drawBtn.style.display = 'block';
+      endBtn.style.display = 'none';
+      drawBtn.textContent = '🀫 타일 뽑고 턴 넘기기';
+    }
+    [drawBtn, endBtn].forEach(b=>{ b.disabled = !isMyTurn; b.style.opacity = isMyTurn ? '1' : '.45'; });
+  }
+  const cancelBtn = document.getElementById('rmkCancelBtn2');
+  if(cancelBtn) cancelBtn.style.display = (isMyTurn && rmkTurnHasChanges) ? 'block' : 'none';
 
   if(match.status === 'finished') rmkShowGameOver(match);
 }
 
 function rmkShowGameOver(match){
+  rmkStopTimers();
   const overlay = document.getElementById('rmkGameOverOverlay');
   const roomInfo = store.getRoomInfo();
   const won = roomInfo && match.winnerId === roomInfo.myId;
   const titleEl = document.getElementById('rmkGameOverTitle');
   const resultEl = document.getElementById('rmkVsResult');
-  if(titleEl) titleEl.textContent = won ? '🎉 승리!' : '게임 종료';
+  if(titleEl) titleEl.textContent = match.endReason === 'inactivity' ? '⏱️ 무동작 종료' : (won ? '🎉 승리!' : '게임 종료');
   if(resultEl){
-    resultEl.className = 'tgc-vs-result ' + (won ? 'win' : 'lose');
-    resultEl.textContent = won ? '축하해요, 손패를 모두 내려놨어요!' : '아쉽지만 파트너가 먼저 손패를 다 냈어요';
+    let msg;
+    if(match.endReason === 'inactivity') msg = '1분 동안 아무 동작이 없어서 게임이 자동으로 종료됐어요';
+    else if(match.endReason === 'forfeit') msg = won ? '파트너가 게임을 나갔어요, 승리!' : '게임에서 나갔어요';
+    else msg = won ? '축하해요, 손패를 모두 내려놨어요!' : '아쉽지만 파트너가 먼저 손패를 다 냈어요';
+    resultEl.className = 'tgc-vs-result ' + (won ? 'win' : (match.endReason==='inactivity' ? '' : 'lose'));
+    resultEl.textContent = msg;
   }
   if(overlay) overlay.style.display = 'flex';
-}
-
-async function rmkPlaceMeld(){
-  const match = store.room && store.room.rummikubMatch;
-  const myKey = rmkMyKey();
-  if(!match || !myKey) return;
-  if(match.turn !== myKey){ toast('상대방 차례예요'); return; }
-  const hand = match[`${myKey}Hand`] || [];
-  const selectedTiles = [...rmkSelectedIds].map(id => hand.find(t=>t.id===id)).filter(Boolean);
-  if(selectedTiles.length < 3){ toast('3장 이상 선택해주세요'); return; }
-  if(!rmkIsValidSet(selectedTiles)){
-    toast('유효한 조합이 아니에요 (같은 숫자+다른색 3장↑, 또는 같은색 연속숫자 3장↑)');
-    return;
-  }
-  const alreadyMelded = match[`${myKey}Melded`];
-  if(!alreadyMelded){
-    const value = rmkSetValue(selectedTiles);
-    if(value < 30){ toast(`첫 조합은 30점 이상이어야 해요 (지금 ${value}점)`); return; }
-  }
-
-  const newHand = hand.filter(t => !rmkSelectedIds.has(t.id));
-  const newBoard = [...(match.board || []), { tiles: selectedTiles }]; // 세트를 객체로 감싸서 nested array 문제 방지
-  const patch = {};
-  patch[`rummikubMatch.${myKey}Hand`] = newHand;
-  patch['rummikubMatch.board'] = newBoard;
-  if(!alreadyMelded) patch[`rummikubMatch.${myKey}Melded`] = true;
-
-  if(newHand.length === 0){
-    patch['rummikubMatch.status'] = 'finished';
-    patch['rummikubMatch.winnerId'] = myKey === 'host' ? match.hostId : match.guestId;
-    patch['rummikubMatch.finishedAt'] = Date.now();
-  }
-
-  await rmkUpdateMatch(patch);
-  rmkSelectedIds.clear();
-}
-
-async function rmkDrawTile(){
-  const match = store.room && store.room.rummikubMatch;
-  const myKey = rmkMyKey();
-  if(!match || !myKey) return;
-  if(match.turn !== myKey){ toast('상대방 차례예요'); return; }
-  if(!match.pool || match.pool.length === 0){ toast('더 뽑을 타일이 없어요'); return; }
-  const pool = [...match.pool];
-  const drawn = pool.pop();
-  const hand = [...(match[`${myKey}Hand`] || []), drawn];
-  const nextTurn = myKey === 'host' ? 'guest' : 'host';
-  const patch = {};
-  patch[`rummikubMatch.${myKey}Hand`] = hand;
-  patch['rummikubMatch.pool'] = pool;
-  patch['rummikubMatch.turn'] = nextTurn;
-  await rmkUpdateMatch(patch);
-  rmkSelectedIds.clear();
-}
-
-async function rmkEndTurn(){
-  const match = store.room && store.room.rummikubMatch;
-  const myKey = rmkMyKey();
-  if(!match || !myKey) return;
-  if(match.turn !== myKey){ toast('상대방 차례예요'); return; }
-  const nextTurn = myKey === 'host' ? 'guest' : 'host';
-  await rmkUpdateMatch({ 'rummikubMatch.turn': nextTurn });
-  rmkSelectedIds.clear();
 }
 
 /* ── 루미큐브: 로비(초대/수락) ─────────────────────────────── */
@@ -2339,7 +2622,7 @@ function renderRmkLobby(){
     body.innerHTML = `
       <div class="vs-lobby-title">루미큐브 한 판 어때요?</div>
       <div class="vs-lobby-avatars"><span class="va">${me.avatar}</span><span class="vs-lobby-vs">VS</span><span class="va">${partner ? partner.avatar : '❔'}</span></div>
-      <div class="vs-lobby-desc">각자 14장씩 나눠 갖고 시작해요. 손패를 먼저 다 내려놓는 사람이 승리!</div>
+      <div class="vs-lobby-desc">각자 14장씩 나눠 갖고 시작해요. 손패를 먼저 다 내려놓는 사람이 승리! (한 턴 15초, 1분간 무동작이면 자동 종료돼요)</div>
       <button class="save-btn ready" id="rmkInviteBtn">대결 신청하기</button>`;
     document.getElementById('rmkInviteBtn')?.addEventListener('click', rmkInvite);
     return;
@@ -2371,7 +2654,9 @@ function renderRmkLobby(){
     document.getElementById('rmkRejoinBtn')?.addEventListener('click', ()=>{
       document.getElementById('rmkLobby').style.display = 'none';
       document.getElementById('rmkPlayScreen').style.display = 'block';
+      rmkLastSeenTurn = null; // 강제로 작업용 사본을 새로 뜨게
       rmkRenderPlayScreen();
+      rmkStartInactivityWatch();
     });
   }
 }
@@ -2405,6 +2690,7 @@ async function rmkAccept(){
         status:'playing', turn:'host',
         hostHand, guestHand, pool, board: [],
         hostMelded:false, guestMelded:false, winnerId:null, startedAt: Date.now(), finishedAt:null,
+        lastActionAt: Date.now(), endReason: null,
       }
     });
   } catch(e){ console.warn('루미큐브 대결 수락 실패:', e); toast('대결 수락에 실패했어요'); }
@@ -2422,15 +2708,21 @@ async function rmkCancel(){
   document.getElementById('gameListScreen').style.display = 'block';
 }
 
-document.getElementById('rmkPlaceBtn')?.addEventListener('click', rmkPlaceMeld);
+document.getElementById('rmkPlaceBtn')?.addEventListener('click', rmkFormSetFromPicked);
+document.getElementById('rmkCancelBtn2')?.addEventListener('click', rmkCancelWorkingChanges);
 document.getElementById('rmkDrawBtn')?.addEventListener('click', rmkDrawTile);
-document.getElementById('rmkEndTurnBtn')?.addEventListener('click', rmkEndTurn);
-document.getElementById('rmkQuitBtn')?.addEventListener('click', ()=>{
+document.getElementById('rmkEndTurnBtn')?.addEventListener('click', rmkCommitTurn);
+document.getElementById('rmkQuitBtn')?.addEventListener('click', async ()=>{
+  await rmkForfeit();
+  rmkStopTimers();
+  rmkWorking = null; rmkLastSeenTurn = null;
   document.getElementById('rmkPlayScreen').style.display = 'none';
   document.getElementById('rmkLobby').style.display = 'block';
   renderRmkLobby();
 });
 document.getElementById('rmkBackBtn')?.addEventListener('click', ()=>{
+  rmkStopTimers();
+  rmkWorking = null; rmkLastSeenTurn = null;
   document.getElementById('rmkGameOverOverlay').style.display = 'none';
   document.getElementById('rmkPlayScreen').style.display = 'none';
   document.getElementById('rmkLobby').style.display = 'block';
@@ -2452,7 +2744,9 @@ function rmkHandleMatchUpdate(){
     if(match.status === 'playing' && iAmParticipant){
       document.getElementById('rmkLobby').style.display = 'none';
       document.getElementById('rmkPlayScreen').style.display = 'block';
+      rmkLastSeenTurn = null;
       rmkRenderPlayScreen();
+      rmkStartInactivityWatch();
     }
   } else if(iAmParticipant){
     rmkRenderPlayScreen();
