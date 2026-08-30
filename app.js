@@ -14,7 +14,7 @@
 // 먹통이 돼요.
 let db = null;
 let firebaseReady = false;
-console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix54 (테트리스 진화: 전부 날개달린 성장 라인으로 교체)', 'color:#8a3fae;font-weight:bold;');
+console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix55 (테트리스: 게임종료 딜레이 보험로직 + 공격 중복적용 버그 수정 + 2000점 기준으로 변경)', 'color:#8a3fae;font-weight:bold;');
 try {
   firebase.initializeApp(firebaseConfig);
   db = firebase.firestore();
@@ -1445,8 +1445,8 @@ function tetrisLock(){
     st.level = Math.floor(st.lines/10) + 1;
   }
   if(st.versus){
-    // 1000점 넘길 때마다 상대방에게 공격(방해 블록) 보내기
-    const newThreshold = Math.floor(st.score / 1000);
+    // 2000점 넘길 때마다 상대방에게 공격(방해 블록) 보내기
+    const newThreshold = Math.floor(st.score / 2000);
     if(newThreshold > (st.lastGarbageThreshold || 0)){
       const sent = newThreshold - (st.lastGarbageThreshold || 0);
       st.lastGarbageThreshold = newThreshold;
@@ -1619,6 +1619,7 @@ async function tetrisGameOver(){
   tetrisState.gameOver = true;
   cancelAnimationFrame(tetrisLoopId);
   clearInterval(tetrisVersusSyncTimer);
+  clearInterval(tetrisVersusWatchInterval);
   const scoreEl = document.getElementById('tetrisGameOverScore');
   if(scoreEl) scoreEl.textContent = tetrisState.score;
   const overlay = document.getElementById('tetrisGameOverOverlay');
@@ -1634,7 +1635,7 @@ async function tetrisGameOver(){
 
 function tetrisStart(opts){
   const versus = !!(opts && opts.versus);
-  tetrisState = { board: tetrisEmptyBoard(), queue: tetrisBag(), score:0, level:1, lines:0, paused:false, gameOver:false, startTs: performance.now(), versus, groundedSince: null, lastGarbageThreshold: 0 };
+  tetrisState = { board: tetrisEmptyBoard(), queue: tetrisBag(), score:0, level:1, lines:0, paused:false, gameOver:false, startTs: performance.now(), versus, groundedSince: null, lastGarbageThreshold: 0, lastAckedGarbage: 0 };
   tetrisSpawnNext();
   tetrisLastDrop = 0;
   const startEl = document.getElementById('tetrisStartScreen');
@@ -1659,12 +1660,20 @@ function tetrisStart(opts){
   window.scrollTo(0, 0);
   tetrisRender();
   clearInterval(tetrisVersusSyncTimer);
+  clearInterval(tetrisVersusWatchInterval);
   if(versus){
     tetrisVersusRenderHud();
     tetrisVersusSyncScore(); // 시작하자마자 한 번 즉시 보내서 상대 화면에 빈 보드부터 바로 뜨게
     tetrisVersusSyncTimer = setInterval(()=>{
       if(tetrisState && tetrisState.versus && !tetrisState.paused && !tetrisState.gameOver) tetrisVersusSyncScore();
     }, 300); // 조각을 놓을 때뿐 아니라 0.3초마다도 계속 보내서 움직임이 좀 더 매끄럽게 보이게
+    // 상대가 죽었는데 실시간 반영이 늦어질 때를 대비한 보험: 1초마다 직접 확인해요
+    tetrisVersusWatchInterval = setInterval(()=>{
+      const m = store.room && store.room.tetrisMatch;
+      if(m && m.status === 'finished' && tetrisState && !tetrisState.gameOver){
+        tetrisGameOver();
+      }
+    }, 1000);
   }
   cancelAnimationFrame(tetrisLoopId);
   tetrisLoopId = requestAnimationFrame(tetrisLoop);
@@ -1683,6 +1692,7 @@ function tetrisResizeCanvas(){
 function tetrisQuit(){
   cancelAnimationFrame(tetrisLoopId);
   clearInterval(tetrisVersusSyncTimer);
+  clearInterval(tetrisVersusWatchInterval);
   // 대결 도중에 그만두면 기권패 처리 (아직 안 끝난 대결이었을 때만)
   if(tetrisState && tetrisState.versus && !tetrisState.gameOver){
     tetrisVersusReportDeath();
@@ -1879,6 +1889,7 @@ async function tetrisAckGarbage(){
 }
 
 let tetrisVersusSyncTimer = null;
+let tetrisVersusWatchInterval = null;
 
 async function tetrisVersusReportDeath(){
   const roomInfo = store.getRoomInfo();
@@ -1935,9 +1946,15 @@ function tetrisHandleMatchUpdate(){
   if(tetrisState && tetrisState.versus && iAmParticipant){
     tetrisVersusRenderHud();
     // 나한테 온 공격(방해 블록)이 있으면 적용하고 확인 처리
+    // ⚠️ ack(확인) 요청이 서버에 반영되기 전에 스냅샷이 또 오면 같은 공격을 두 번 처리해버릴 수 있어서,
+    // "이 값은 이미 처리했다"를 로컬에 기록해두고 같은 값이면 건너뛰어요. 서버 값이 0으로 돌아온 걸
+    // 확인하면 기록을 리셋해서, 다음에 "같은 크기"의 새 공격이 와도 정상 처리되게 해요.
     const myKey = tetrisMyVersusKey();
     const incoming = myKey ? (match[`${myKey}GarbageIncoming`] || 0) : 0;
-    if(incoming > 0 && !tetrisState.gameOver){
+    if(incoming === 0){
+      tetrisState.lastAckedGarbage = 0;
+    } else if(!tetrisState.gameOver && incoming !== tetrisState.lastAckedGarbage){
+      tetrisState.lastAckedGarbage = incoming;
       tetrisApplyGarbage(incoming);
       tetrisAckGarbage();
     }
