@@ -14,7 +14,7 @@
 // 먹통이 돼요.
 let db = null;
 let firebaseReady = false;
-console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix45 (루미큐브 1단계: 대결모드 기본 플레이 추가)', 'color:#8a3fae;font-weight:bold;');
+console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix47 (루미큐브 카드에 남아있던 예전 "준비중" 핸들러 제거)', 'color:#8a3fae;font-weight:bold;');
 try {
   firebase.initializeApp(firebaseConfig);
   db = firebase.firestore();
@@ -1807,7 +1807,12 @@ function tetrisHandleMatchUpdate(){
   const roomInfo = store.getRoomInfo();
   if(!match || !roomInfo) return;
   const iAmParticipant = match.hostId === roomInfo.myId || match.guestId === roomInfo.myId;
-  console.log('[tetris-match]', { status: match.status, iAmParticipant, hasTetrisState: !!tetrisState, isVersus: !!(tetrisState && tetrisState.versus) });
+
+  // 테트리스 화면을 실제로 보고 있을 때만 반응해요. 이 체크가 없으면, 예전에 만들어진
+  // 대결 기록이 Firestore에 남아있을 때 다른 탭(캘린더 등)에 있어도 갑자기 테트리스로
+  // 끌려가는 문제가 생겨요 (실제로 있었던 버그).
+  const rootVisible = document.getElementById('tetrisRoot')?.style.display !== 'none';
+  if(!rootVisible) return;
 
   // 로비가 열려있으면 최신 상태로 다시 그림 (초대 도착, 상대 수락 등)
   if(document.getElementById('tetrisVersusLobby')?.style.display !== 'none'){
@@ -1983,9 +1988,6 @@ document.getElementById('gameCardTetris')?.addEventListener('click', ()=>{
   document.getElementById('tetrisVersusLobby').style.display = 'none';
   document.getElementById('tetrisPlayScreen').style.display = 'none';
   renderTetrisLeaderboard();
-});
-document.getElementById('gameCardRummikub')?.addEventListener('click', ()=>{
-  toast('루미큐브는 곧 추가될 예정이에요! 🀄');
 });
 document.getElementById('tetrisBackToListBtn')?.addEventListener('click', ()=>{
   document.getElementById('tetrisRoot').style.display = 'none';
