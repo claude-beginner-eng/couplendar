@@ -14,7 +14,7 @@
 // 먹통이 돼요.
 let db = null;
 let firebaseReady = false;
-console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix47 (루미큐브 카드에 남아있던 예전 "준비중" 핸들러 제거)', 'color:#8a3fae;font-weight:bold;');
+console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix49 (루미큐브: 저장실패 버그 수정(nested array) + 정렬 버튼 2종 추가)', 'color:#8a3fae;font-weight:bold;');
 try {
   firebase.initializeApp(firebaseConfig);
   db = firebase.firestore();
@@ -1820,7 +1820,11 @@ function tetrisHandleMatchUpdate(){
   }
 
   // 상대가 방금 수락해서 status가 playing으로 바뀐 순간 -> 내 로컬 게임 자동 시작
-  if(match.status === 'playing' && iAmParticipant && (!tetrisState || !tetrisState.versus)){
+  // 조건을 엄격하게: "로비 화면을 보고 있고" + "지금 내가 하고 있는 게임이 아예 없을 때"만.
+  // (예전엔 !tetrisState.versus 만 체크해서, 혼자 플레이 중이거나 방금 끝났을 때도
+  //  이 조건에 걸려서 대결모드로 강제로 넘어가버리는 버그가 있었어요)
+  const lobbyVisible = document.getElementById('tetrisVersusLobby')?.style.display !== 'none';
+  if(match.status === 'playing' && iAmParticipant && lobbyVisible && !tetrisState){
     document.getElementById('tetrisVersusLobby').style.display = 'none';
     document.getElementById('tetrisStartScreen').style.display = 'none';
     tetrisStart({ versus:true });
@@ -2134,15 +2138,34 @@ function rmkTileHTML(tile, selected, staticTile){
   const label = tile.isJoker ? '★' : tile.number;
   return `<div class="${cls.join(' ')}" data-tile-id="${tile.id}">${label}</div>`;
 }
+let rmkSortMode = 'color'; // 'color' | 'number'
 function rmkSortHand(hand){
   return [...hand].sort((a,b)=>{
     if(a.isJoker && b.isJoker) return 0;
     if(a.isJoker) return 1;
     if(b.isJoker) return -1;
+    if(rmkSortMode === 'number'){
+      // 숫자 순 오름차순 (색 무관) — 같은 숫자면 색상 순서로 보조 정렬
+      if(a.number !== b.number) return a.number - b.number;
+      return RMK_COLORS.indexOf(a.color) - RMK_COLORS.indexOf(b.color);
+    }
+    // 색상별로 묶고, 같은 색 안에서는 숫자 오름차순
     if(a.color !== b.color) return RMK_COLORS.indexOf(a.color) - RMK_COLORS.indexOf(b.color);
     return a.number - b.number;
   });
 }
+document.getElementById('rmkSortColorBtn')?.addEventListener('click', ()=>{
+  rmkSortMode = 'color';
+  document.getElementById('rmkSortColorBtn')?.classList.add('active');
+  document.getElementById('rmkSortNumberBtn')?.classList.remove('active');
+  rmkRenderPlayScreen();
+});
+document.getElementById('rmkSortNumberBtn')?.addEventListener('click', ()=>{
+  rmkSortMode = 'number';
+  document.getElementById('rmkSortNumberBtn')?.classList.add('active');
+  document.getElementById('rmkSortColorBtn')?.classList.remove('active');
+  rmkRenderPlayScreen();
+});
 function rmkRenderBoard(board){
   const el = document.getElementById('rmkBoard');
   if(!el) return;
@@ -2150,7 +2173,9 @@ function rmkRenderBoard(board){
     el.innerHTML = `<div class="rmk-board-empty">아직 보드에 놓인 조합이 없어요</div>`;
     return;
   }
-  el.innerHTML = board.map(set => `<div class="rmk-set">${set.map(t=>rmkTileHTML(t,false,true)).join('')}</div>`).join('');
+  // board는 [{tiles:[...]}, {tiles:[...]}] 형태예요. Firestore는 "배열 안에 배열"을
+  // 직접 저장할 수 없어서(nested array 금지), 각 세트를 객체로 한 겹 감싸둔 거예요.
+  el.innerHTML = board.map(setObj => `<div class="rmk-set">${(setObj.tiles||[]).map(t=>rmkTileHTML(t,false,true)).join('')}</div>`).join('');
 }
 function rmkRenderHand(hand){
   const el = document.getElementById('rmkHand');
@@ -2235,7 +2260,7 @@ async function rmkPlaceMeld(){
   }
 
   const newHand = hand.filter(t => !rmkSelectedIds.has(t.id));
-  const newBoard = [...(match.board || []), selectedTiles];
+  const newBoard = [...(match.board || []), { tiles: selectedTiles }]; // 세트를 객체로 감싸서 nested array 문제 방지
   const patch = {};
   patch[`rummikubMatch.${myKey}Hand`] = newHand;
   patch['rummikubMatch.board'] = newBoard;
