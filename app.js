@@ -14,7 +14,7 @@
 // 먹통이 돼요.
 let db = null;
 let firebaseReady = false;
-console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix51 (루미큐브: 낼 수 있는 조합 자동 정렬 + 꾹눌러 세트 한번에 선택)', 'color:#8a3fae;font-weight:bold;');
+console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix53 (테트리스: 점수별 캐릭터 진화 + 대결모드 1000점마다 공격)', 'color:#8a3fae;font-weight:bold;');
 try {
   firebase.initializeApp(firebaseConfig);
   db = firebase.firestore();
@@ -1272,6 +1272,56 @@ function connectToRoomListener(code){
    2단계(추후): 실시간 대결 모드
    ============================================================ */
 const TETRIS_COLS = 10, TETRIS_ROWS = 20;
+
+// 점수에 따라 내 캐릭터가 진화해요. 4단계: 기본 -> 성장 -> 강함 -> 레전더리.
+// 감정적으로 잘 어울리는 진짜 "진화형" 이모지가 있으면 그걸 쓰고, 마땅한 게 없으면
+// 같은 이모지를 유지하되 크기/후광 효과로 "더 강해진 느낌"을 줘요.
+const TETRIS_EVOLUTION_THRESHOLDS = [0, 1000, 3000, 6000];
+const AVATAR_EVOLUTION = {
+  '🐻': ['🐻','🐻','🐻‍❄️','🐉'],
+  '🐰': ['🐰','🐰','🐇','🦄'],
+  '🐱': ['🐱','🐱','🐈','🦁'],
+  '🐶': ['🐶','🐶','🐕','🐺'],
+  '🦊': ['🦊','🦊','🦊','🐉'],
+  '🐼': ['🐼','🐼','🐼','🐉'],
+  '🦁': ['🦁','🦁','🦁','🐉'],
+  '🐨': ['🐨','🐨','🐨','🐉'],
+  '🐯': ['🐯','🐯','🐅','🦁'],
+  '🐥': ['🐥','🐤','🐔','🦅'],
+  '🦄': ['🦄','🦄','🦄','🐉'],
+  '🐧': ['🐧','🐧','🐧','🐉'],
+};
+function tetrisEvolutionTier(score){
+  let tier = 0;
+  for(let i=0; i<TETRIS_EVOLUTION_THRESHOLDS.length; i++){
+    if(score >= TETRIS_EVOLUTION_THRESHOLDS[i]) tier = i;
+  }
+  return tier;
+}
+function tetrisEvolutionEmoji(baseAvatar, tier){
+  const chain = AVATAR_EVOLUTION[baseAvatar] || [baseAvatar, baseAvatar, baseAvatar, baseAvatar];
+  return chain[tier] || chain[chain.length-1];
+}
+const TETRIS_EVOLUTION_LABELS = ['기본', '성장', '강함', '레전더리'];
+function tetrisUpdateEvolution(st){
+  const el = document.getElementById('tetrisEvolveChar');
+  const labelEl = document.getElementById('tetrisEvolveLabel');
+  if(!el) return;
+  const baseAvatar = (store.profile && store.profile.avatar) || '🐻';
+  const tier = tetrisEvolutionTier(st.score);
+  const emoji = tetrisEvolutionEmoji(baseAvatar, tier);
+  el.textContent = emoji;
+  el.className = 'tetris-evolve-char tier' + tier;
+  if(labelEl) labelEl.textContent = TETRIS_EVOLUTION_LABELS[tier];
+  if(st.lastEvolveTier === undefined) st.lastEvolveTier = tier;
+  if(tier > st.lastEvolveTier){
+    st.lastEvolveTier = tier;
+    el.classList.add('flash');
+    setTimeout(()=> el.classList.remove('flash'), 600);
+    toast(`✨ ${emoji} 진화했어요! (${TETRIS_EVOLUTION_LABELS[tier]})`);
+  }
+}
+
 const TETRIS_CELL = 20; // 캔버스 내부 좌표 계산용 고정값. 실제 화면에 보이는 크기는 CSS가 알아서 맞춰줘요.
 const TETRIS_LOCK_DELAY = 500; // 바닥에 닿아도 이 시간(ms) 동안은 움직이거나 회전할 여유를 줌
 
@@ -1319,7 +1369,7 @@ const TETRIS_SHAPES = {
     [[1,1,0],[0,1,0],[0,1,0]],
   ],
 };
-const TETRIS_COLORS = { I:'#22d3ee', O:'#fbbf24', T:'#a78bfa', S:'#4ade80', Z:'#f87171', J:'#60a5fa', L:'#fb923c' };
+const TETRIS_COLORS = { I:'#22d3ee', O:'#fbbf24', T:'#a78bfa', S:'#4ade80', Z:'#f87171', J:'#60a5fa', L:'#fb923c', GARBAGE:'#6b7280' };
 const TETRIS_TYPES = Object.keys(TETRIS_SHAPES);
 
 let tetrisState = null;
@@ -1380,7 +1430,8 @@ function tetrisLock(){
   }
   let cleared = 0;
   for(let r=TETRIS_ROWS-1; r>=0; r--){
-    if(st.board[r].every(cell=>cell)){
+    // 방해 블록(GARBAGE)이 섞인 줄은 꽉 차 보여도 절대 안 깨져요 (깨지지 않는 공격 블록)
+    if(st.board[r].every(cell=>cell) && !st.board[r].includes('GARBAGE')){
       st.board.splice(r,1);
       st.board.unshift(Array(TETRIS_COLS).fill(0));
       cleared++;
@@ -1392,6 +1443,15 @@ function tetrisLock(){
     st.score += (pointsTable[cleared] || 800) * st.level;
     st.lines += cleared;
     st.level = Math.floor(st.lines/10) + 1;
+  }
+  if(st.versus){
+    // 1000점 넘길 때마다 상대방에게 공격(방해 블록) 보내기
+    const newThreshold = Math.floor(st.score / 1000);
+    if(newThreshold > (st.lastGarbageThreshold || 0)){
+      const sent = newThreshold - (st.lastGarbageThreshold || 0);
+      st.lastGarbageThreshold = newThreshold;
+      tetrisSendGarbage(sent);
+    }
   }
   if(st.versus) tetrisVersusSyncScore(); // 조각을 놓을 때마다(줄 클리어 여부와 상관없이) 파트너 화면에 반영
   if(!st.gameOver) tetrisSpawnNext();
@@ -1461,6 +1521,7 @@ function tetrisRender(){
   if(scoreEl) scoreEl.textContent = st.score;
   if(levelEl) levelEl.textContent = st.level;
   if(linesEl) linesEl.textContent = st.lines;
+  tetrisUpdateEvolution(st);
 
   const nextCanvas = document.getElementById('tetrisNextCanvas');
   if(nextCanvas){
@@ -1573,7 +1634,7 @@ async function tetrisGameOver(){
 
 function tetrisStart(opts){
   const versus = !!(opts && opts.versus);
-  tetrisState = { board: tetrisEmptyBoard(), queue: tetrisBag(), score:0, level:1, lines:0, paused:false, gameOver:false, startTs: performance.now(), versus, groundedSince: null };
+  tetrisState = { board: tetrisEmptyBoard(), queue: tetrisBag(), score:0, level:1, lines:0, paused:false, gameOver:false, startTs: performance.now(), versus, groundedSince: null, lastGarbageThreshold: 0 };
   tetrisSpawnNext();
   tetrisLastDrop = 0;
   const startEl = document.getElementById('tetrisStartScreen');
@@ -1736,6 +1797,7 @@ async function tetrisVersusAccept(){
         guestId: roomInfo.myId, guestName: store.profile.name || '나', guestAvatar: store.profile.avatar || '🐰',
         status:'playing', startedAt: Date.now(),
         hostScore:0, guestScore:0, hostLines:0, guestLines:0, hostAlive:true, guestAlive:true, winnerId:null,
+        hostGarbageIncoming:0, guestGarbageIncoming:0,
       }
     });
   } catch(e){ console.warn('대결 수락 실패:', e); toast('대결 수락에 실패했어요'); }
@@ -1759,10 +1821,7 @@ function tetrisEncodeBoard(board){
 async function tetrisVersusSyncScore(){
   const roomInfo = store.getRoomInfo();
   const key = tetrisMyVersusKey();
-  if(!roomInfo || !firebaseReady || !key || !tetrisState){
-    console.log('[tetris-sync] 동기화 건너뜀:', { hasRoomInfo:!!roomInfo, firebaseReady, key, hasState:!!tetrisState });
-    return;
-  }
+  if(!roomInfo || !firebaseReady || !key || !tetrisState) return;
   try {
     const patch = {};
     patch[`tetrisMatch.${key}Score`] = tetrisState.score;
@@ -1773,8 +1832,50 @@ async function tetrisVersusSyncScore(){
     patch[`tetrisMatch.${key}PieceY`] = tetrisState.piece.y;
     patch[`tetrisMatch.${key}PieceRot`] = tetrisState.piece.rotation;
     await db.collection('rooms').doc(roomInfo.code).update(patch);
-    console.log('[tetris-sync] 보냄:', key, 'boardLen=', patch[`tetrisMatch.${key}Board`].length, 'piece=', tetrisState.piece.type);
-  } catch(e){ console.warn('[tetris-sync] 대결 동기화 실패:', e); }
+  } catch(e){ console.warn('대결 동기화 실패:', e); }
+}
+
+// 1000점 넘길 때마다 상대에게 "깨지지 않는 방해 블록" 보내기
+async function tetrisSendGarbage(count){
+  const roomInfo = store.getRoomInfo();
+  const otherKey = tetrisOtherVersusKey();
+  if(!roomInfo || !firebaseReady || !otherKey || count <= 0) return;
+  try {
+    const ref = db.collection('rooms').doc(roomInfo.code);
+    const snap = await ref.get();
+    if(!snap.exists) return;
+    const match = snap.data().tetrisMatch;
+    if(!match || match.status !== 'playing') return;
+    const current = match[`${otherKey}GarbageIncoming`] || 0;
+    const patch = {};
+    patch[`tetrisMatch.${otherKey}GarbageIncoming`] = current + count;
+    await ref.update(patch);
+    toast(`⚔️ 공격! 상대에게 방해 블록 ${count}줄을 보냈어요`);
+  } catch(e){ console.warn('테트리스 공격 전송 실패:', e); }
+}
+
+// 내 보드 맨 아래에 방해 블록 줄을 쌓아요. 위쪽 줄은 그만큼 밀려서 사라져요(공간 유지).
+function tetrisApplyGarbage(count){
+  const st = tetrisState;
+  if(!st || count <= 0) return;
+  for(let i=0; i<count; i++){
+    st.board.shift();
+    st.board.push(Array(TETRIS_COLS).fill('GARBAGE'));
+  }
+  toast(`💥 방해 블록 ${count}줄이 쌓였어요!`);
+  if(tetrisCollide(st.board, st.piece)){
+    tetrisGameOver(); // 밀려 올라온 블록에 지금 조각이 깔리면 게임오버
+  }
+}
+async function tetrisAckGarbage(){
+  const roomInfo = store.getRoomInfo();
+  const myKey = tetrisMyVersusKey();
+  if(!roomInfo || !firebaseReady || !myKey) return;
+  try {
+    const patch = {};
+    patch[`tetrisMatch.${myKey}GarbageIncoming`] = 0;
+    await db.collection('rooms').doc(roomInfo.code).update(patch);
+  } catch(e){ console.warn('공격 수신 확인 실패:', e); }
 }
 
 let tetrisVersusSyncTimer = null;
@@ -1833,6 +1934,13 @@ function tetrisHandleMatchUpdate(){
   // 대결 중 상대방 점수/생존 상태 실시간 HUD 갱신
   if(tetrisState && tetrisState.versus && iAmParticipant){
     tetrisVersusRenderHud();
+    // 나한테 온 공격(방해 블록)이 있으면 적용하고 확인 처리
+    const myKey = tetrisMyVersusKey();
+    const incoming = myKey ? (match[`${myKey}GarbageIncoming`] || 0) : 0;
+    if(incoming > 0 && !tetrisState.gameOver){
+      tetrisApplyGarbage(incoming);
+      tetrisAckGarbage();
+    }
     // 상대가 먼저 끝나서 대결이 끝났는데, 나는 아직 살아서 계속 플레이 중이면 -> 내 게임도 종료
     if(match.status === 'finished' && !tetrisState.gameOver){
       tetrisGameOver();
@@ -2169,40 +2277,63 @@ document.getElementById('rmkSortNumberBtn')?.addEventListener('click', ()=>{
 
 // 지금 손패 안에서 "바로 낼 수 있는 조합"을 하나 찾아줘요 (그룹 우선, 없으면 런).
 // 여러 개 있어도 일단 하나만 찾아서 앞으로 빼주는 용도예요.
-function rmkFindPlayableSet(hand){
-  const byNumber = {};
-  hand.forEach(t=>{
-    if(t.isJoker) return;
-    (byNumber[t.number] = byNumber[t.number] || []).push(t);
-  });
-  for(const num in byNumber){
-    const seen = new Set();
-    const uniqueColors = [];
-    byNumber[num].forEach(t=>{ if(!seen.has(t.color)){ seen.add(t.color); uniqueColors.push(t); } });
-    if(uniqueColors.length >= 3) return uniqueColors.slice(0, 4).map(t=>t.id);
-  }
-  const byColor = {};
-  hand.forEach(t=>{
-    if(t.isJoker) return;
-    (byColor[t.color] = byColor[t.color] || []).push(t);
-  });
-  for(const color in byColor){
-    const seenNum = new Set();
-    const uniqueByNum = [];
-    [...byColor[color]].sort((a,b)=>a.number-b.number).forEach(t=>{
-      if(!seenNum.has(t.number)){ seenNum.add(t.number); uniqueByNum.push(t); }
-    });
-    let run = [uniqueByNum[0]];
-    for(let i=1; i<uniqueByNum.length; i++){
-      if(uniqueByNum[i].number === run[run.length-1].number + 1){
-        run.push(uniqueByNum[i]);
-        if(run.length >= 3) return run.map(t=>t.id);
-      } else {
-        run = [uniqueByNum[i]];
+// 손패 안에서 지금 바로 낼 수 있는 조합을 "전부" 찾아줘요 (겹치는 타일 없이).
+// 그룹부터 다 찾고, 남은 타일들로 런을 찾는 순서예요.
+function rmkFindPlayableSets(hand){
+  const used = new Set();
+  const results = [];
+  const remaining = ()=> hand.filter(t=>!used.has(t.id));
+
+  let found = true;
+  while(found){
+    found = false;
+    const byNumber = {};
+    remaining().forEach(t=>{ if(!t.isJoker) (byNumber[t.number] = byNumber[t.number] || []).push(t); });
+    for(const num in byNumber){
+      const seen = new Set();
+      const uniqueColors = [];
+      byNumber[num].forEach(t=>{ if(!seen.has(t.color)){ seen.add(t.color); uniqueColors.push(t); } });
+      if(uniqueColors.length >= 3){
+        const setTiles = uniqueColors.slice(0, 4);
+        setTiles.forEach(t=>used.add(t.id));
+        results.push(setTiles.map(t=>t.id));
+        found = true;
+        break;
       }
     }
   }
-  return null;
+
+  found = true;
+  while(found){
+    found = false;
+    const byColor = {};
+    remaining().forEach(t=>{ if(!t.isJoker) (byColor[t.color] = byColor[t.color] || []).push(t); });
+    for(const color in byColor){
+      const seenNum = new Set();
+      const uniqueByNum = [];
+      [...byColor[color]].sort((a,b)=>a.number-b.number).forEach(t=>{
+        if(!seenNum.has(t.number)){ seenNum.add(t.number); uniqueByNum.push(t); }
+      });
+      let run = uniqueByNum.length ? [uniqueByNum[0]] : [];
+      let bestRun = null;
+      for(let i=1; i<uniqueByNum.length; i++){
+        if(uniqueByNum[i].number === run[run.length-1].number + 1){
+          run.push(uniqueByNum[i]);
+        } else {
+          if(run.length >= 3 && !bestRun) bestRun = run;
+          run = [uniqueByNum[i]];
+        }
+      }
+      if(run.length >= 3 && !bestRun) bestRun = run;
+      if(bestRun){
+        bestRun.forEach(t=>used.add(t.id));
+        results.push(bestRun.map(t=>t.id));
+        found = true;
+        break;
+      }
+    }
+  }
+  return results; // [[id,id,id], [id,id,id,id], ...]
 }
 
 /* ============================================================
@@ -2375,6 +2506,25 @@ function rmkStartTurnTimer(){
 function rmkUpdateTimerDisplay(){
   const el = document.getElementById('rmkTimer');
   if(el) el.textContent = Math.max(0, rmkTurnTimerRemaining);
+  rmkUpdateBoardFlash();
+}
+// 내 차례일 때 보드 테두리를 빨갛게 깜빡여요. 시간이 촉박할수록 더 빨리 깜빡여요.
+function rmkUpdateBoardFlash(){
+  const boardEl = document.getElementById('rmkBoard');
+  if(!boardEl) return;
+  const match = store.room && store.room.rummikubMatch;
+  const myKey = rmkMyKey();
+  const isMyTurn = match && match.status === 'playing' && match.turn === myKey;
+  if(isMyTurn){
+    boardEl.classList.add('my-turn');
+    // 15초 남았을 땐 1.4초 주기, 0초에 가까워질수록 0.35초까지 점점 빨라져요.
+    const ratio = Math.max(0, Math.min(1, rmkTurnTimerRemaining / 15));
+    const duration = 0.35 + ratio * 1.05;
+    boardEl.style.animationDuration = duration.toFixed(2) + 's';
+  } else {
+    boardEl.classList.remove('my-turn');
+    boardEl.style.animationDuration = '';
+  }
 }
 async function rmkHandleTimeout(){
   const match = store.room && store.room.rummikubMatch;
@@ -2468,10 +2618,11 @@ function rmkRenderHand(){
   const isMyTurn = match && match.turn === myKey;
   const sorted = rmkSortHand(rmkWorking.hand);
 
-  // 지금 낼 수 있는 조합이 있으면 맨 앞으로 빼고, 나머지 패랑 한 칸 띄워줘요.
-  const playableIds = rmkFindPlayableSet(sorted);
+  // 지금 낼 수 있는 조합을 전부 찾아서(여러 개일 수 있음) 다 같이 맨 앞으로 빼고, 나머지 패랑 한 칸 띄워줘요.
+  const playableSets = rmkFindPlayableSets(sorted); // [[id,id,id], [id,id,id], ...]
+  const playableIds = playableSets.flat();
   let html = '';
-  if(playableIds && playableIds.length){
+  if(playableIds.length){
     const playableSet = new Set(playableIds);
     const front = sorted.filter(t => playableSet.has(t.id));
     const rest = sorted.filter(t => !playableSet.has(t.id));
@@ -2492,11 +2643,11 @@ function rmkRenderHand(){
       elm.addEventListener('pointerdown', ()=>{
         longPressHandled = false;
         pressTimer = setTimeout(()=>{
-          // 꾹 누르기: 이 타일이 "낼 수 있는 조합"의 일부일 때만 그 세트 전체를 한번에 선택해요.
-          // 조합에 안 속한 타일이면 꾹 눌러도 특별한 동작 없이, 뗄 때 평소처럼 한 장만 토글돼요.
-          if(playableIds && playableIds.includes(tileId)){
+          // 꾹 누르기: 이 타일이 속한 "그 조합"만 통째로 선택해요 (여러 조합이 있으면 그 중 이 타일이 속한 것만).
+          const mySet = playableSets.find(s => s.includes(tileId));
+          if(mySet){
             longPressHandled = true;
-            playableIds.forEach(id=>{ if(!rmkPickedIds.includes(id)) rmkPickedIds.push(id); });
+            mySet.forEach(id=>{ if(!rmkPickedIds.includes(id)) rmkPickedIds.push(id); });
             rmkRenderPlayScreen();
           }
         }, 420);
@@ -2515,7 +2666,13 @@ function rmkRenderHand(){
 
 function rmkRenderPlayScreen(){
   const match = store.room && store.room.rummikubMatch;
-  if(!match || match.status !== 'playing') return;
+  if(!match) return;
+  if(match.status === 'finished'){
+    rmkStopTimers();
+    rmkShowGameOver(match);
+    return;
+  }
+  if(match.status !== 'playing') return;
   const myKey = rmkMyKey();
   const otherKey = rmkOtherKey();
   if(!myKey || !otherKey) return;
@@ -2564,8 +2721,7 @@ function rmkRenderPlayScreen(){
   }
   const cancelBtn = document.getElementById('rmkCancelBtn2');
   if(cancelBtn) cancelBtn.style.display = (isMyTurn && rmkTurnHasChanges) ? 'block' : 'none';
-
-  if(match.status === 'finished') rmkShowGameOver(match);
+  rmkUpdateBoardFlash();
 }
 
 function rmkShowGameOver(match){
@@ -2585,6 +2741,69 @@ function rmkShowGameOver(match){
     resultEl.textContent = msg;
   }
   if(overlay) overlay.style.display = 'flex';
+
+  // 승리자에게만: 점수 보너스 상자 (무동작 종료는 승자가 없어서 제외)
+  const boxesEl = document.getElementById('rmkBonusBoxes');
+  if(boxesEl){
+    if(won && match.endReason !== 'inactivity' && !match.scoreApplied){
+      boxesEl.style.display = 'block';
+      rmkSetupBonusBoxes();
+    } else {
+      boxesEl.style.display = 'none';
+    }
+  }
+}
+
+function rmkSetupBonusBoxes(){
+  const boxesEl = document.getElementById('rmkBonusBoxes');
+  if(!boxesEl) return;
+  const values = rmkShuffle([1, 3, 5]);
+  const buttons = boxesEl.querySelectorAll('.rmk-box');
+  buttons.forEach((btn, i)=>{
+    btn.disabled = false;
+    btn.textContent = '🎁';
+    btn.onclick = async ()=>{
+      buttons.forEach(b=>{ b.disabled = true; });
+      btn.textContent = `+${values[i]}점`;
+      btn.classList.add('opened');
+      await rmkApplyGameEndScore(values[i]);
+      // 다른 상자들도 뭐가 들어있었는지 살짝 보여줘요(재미 요소)
+      buttons.forEach((b, j)=>{ if(j!==i) b.textContent = `${values[j]}점`; });
+    };
+  });
+}
+
+async function rmkApplyGameEndScore(bonus){
+  const roomInfo = store.getRoomInfo();
+  if(!roomInfo || !firebaseReady) return;
+  try {
+    const ref = db.collection('rooms').doc(roomInfo.code);
+    const snap = await ref.get();
+    if(!snap.exists) return;
+    const data = snap.data();
+    const freshMatch = data.rummikubMatch;
+    if(!freshMatch || freshMatch.scoreApplied || !freshMatch.winnerId) return; // 중복 반영 방지
+
+    const winnerId = freshMatch.winnerId;
+    const loserId = winnerId === freshMatch.hostId ? freshMatch.guestId : freshMatch.hostId;
+    const winnerName = winnerId === freshMatch.hostId ? freshMatch.hostName : freshMatch.guestName;
+    const winnerAvatar = winnerId === freshMatch.hostId ? freshMatch.hostAvatar : freshMatch.guestAvatar;
+    const loserName = loserId === freshMatch.hostId ? freshMatch.hostName : freshMatch.guestName;
+    const loserAvatar = loserId === freshMatch.hostId ? freshMatch.hostAvatar : freshMatch.guestAvatar;
+
+    const scores = [...(data.rummikubScores || [])];
+    function bump(id, name, avatar, delta){
+      if(!id) return;
+      const idx = scores.findIndex(s => s.memberId === id);
+      if(idx >= 0) scores[idx] = { ...scores[idx], name, avatar, points: (scores[idx].points || 0) + delta };
+      else scores.push({ memberId: id, name, avatar, points: delta });
+    }
+    bump(winnerId, winnerName, winnerAvatar, bonus);
+    bump(loserId, loserName, loserAvatar, -1);
+
+    await ref.update({ rummikubScores: scores, 'rummikubMatch.scoreApplied': true });
+    toast(`🎁 보너스 ${bonus}점 획득!`);
+  } catch(e){ console.warn('루미큐브 점수 반영 실패:', e); }
 }
 
 /* ── 루미큐브: 로비(초대/수락) ─────────────────────────────── */
@@ -2619,7 +2838,20 @@ function renderRmkLobby(){
   }
 
   if(!match || match.status === 'finished' || match.status === 'cancelled'){
+    const scores = (store.room && store.room.rummikubScores) || [];
+    const scoreHTML = scores.length
+      ? `<div class="tetris-lb-card" style="margin-bottom:12px;">
+           <div class="field-label">🏆 누적 점수 (승리 보너스 − 패배 -1점)</div>
+           ${[...scores].sort((a,b)=>b.points-a.points).map((s,i)=>`
+             <div class="tetris-lb-row">
+               <span class="tetris-lb-rank">${i+1}</span>
+               <span class="tetris-lb-avatar">${s.avatar}</span>
+               <span class="tetris-lb-name">${s.name}</span>
+               <span class="tetris-lb-score">${s.points}점</span>
+             </div>`).join('')}
+         </div>` : '';
     body.innerHTML = `
+      ${scoreHTML}
       <div class="vs-lobby-title">루미큐브 한 판 어때요?</div>
       <div class="vs-lobby-avatars"><span class="va">${me.avatar}</span><span class="vs-lobby-vs">VS</span><span class="va">${partner ? partner.avatar : '❔'}</span></div>
       <div class="vs-lobby-desc">각자 14장씩 나눠 갖고 시작해요. 손패를 먼저 다 내려놓는 사람이 승리! (한 턴 15초, 1분간 무동작이면 자동 종료돼요)</div>
@@ -2690,7 +2922,7 @@ async function rmkAccept(){
         status:'playing', turn:'host',
         hostHand, guestHand, pool, board: [],
         hostMelded:false, guestMelded:false, winnerId:null, startedAt: Date.now(), finishedAt:null,
-        lastActionAt: Date.now(), endReason: null,
+        lastActionAt: Date.now(), endReason: null, scoreApplied: false,
       }
     });
   } catch(e){ console.warn('루미큐브 대결 수락 실패:', e); toast('대결 수락에 실패했어요'); }

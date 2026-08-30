@@ -271,6 +271,11 @@
     background:#2b6b4f; border-radius:14px; padding:10px; min-height:120px; margin-bottom:14px;
     display:flex; flex-wrap:wrap; gap:8px; align-content:flex-start; box-shadow:0 6px 16px rgba(0,0,0,.18);
   }
+  @keyframes rmk-turn-flash {
+    0%, 100% { box-shadow: 0 6px 16px rgba(0,0,0,.18), 0 0 0 3px rgba(239,68,68,.95); }
+    50% { box-shadow: 0 6px 16px rgba(0,0,0,.18), 0 0 0 3px rgba(239,68,68,.1); }
+  }
+  .rmk-board.my-turn{ animation: rmk-turn-flash 1.4s ease-in-out infinite; }
   .rmk-set{ display:flex; gap:3px; background:rgba(255,255,255,.08); border-radius:8px; padding:4px; }
   .rmk-set.invalid{ box-shadow:0 0 0 2px #ef4444 inset; }
   .rmk-board-empty{ color:rgba(255,255,255,.6); font-size:11px; padding:8px; }
@@ -338,6 +343,26 @@
     max-width: calc(100% - 84px);
   }
   .tetris-side{ display:flex; flex-direction:column; align-items:center; gap:6px; }
+
+  /* ── 테트리스: 점수에 따라 진화하는 캐릭터 ─────────────────── */
+  .tetris-evolve-wrap{ display:flex; flex-direction:column; align-items:center; justify-content:center; flex:1; gap:3px; min-height:40px; }
+  .tetris-evolve-char{ font-size:22px; line-height:1; transition: font-size .3s ease; }
+  .tetris-evolve-label{ font-size:7.5px; font-weight:800; color:var(--sub); }
+  @keyframes tetris-bob{ 0%,100%{ transform:translateY(0); } 50%{ transform:translateY(-4px); } }
+  @keyframes tetris-bob-fast{ 0%,100%{ transform:translateY(0) rotate(-4deg); } 50%{ transform:translateY(-7px) rotate(4deg); } }
+  @keyframes tetris-legend-glow{
+    0%,100%{ filter:drop-shadow(0 0 4px #fbbf24) drop-shadow(0 0 8px #f59e0b); }
+    50%{ filter:drop-shadow(0 0 10px #fb923c) drop-shadow(0 0 16px #ef4444); }
+  }
+  .tetris-evolve-char.tier0{ font-size:20px; animation: tetris-bob 2.2s ease-in-out infinite; }
+  .tetris-evolve-char.tier1{ font-size:26px; animation: tetris-bob 1.7s ease-in-out infinite; }
+  .tetris-evolve-char.tier2{ font-size:32px; animation: tetris-bob-fast 1.2s ease-in-out infinite; filter:drop-shadow(0 0 5px #a78bfa); }
+  .tetris-evolve-char.tier3{ font-size:40px; animation: tetris-bob-fast .8s ease-in-out infinite, tetris-legend-glow 1s ease-in-out infinite; }
+  .tetris-evolve-char.flash{ animation: tetris-evolve-flash .6s ease-out; }
+  @keyframes tetris-evolve-flash{
+    0%{ transform:scale(1.6); }
+    100%{ transform:scale(1); }
+  }
   .tetris-next-label{ font-size:9px; font-weight:800; color:var(--sub); }
   #tetrisNextCanvas{ background:#2b1f3d; border-radius:6px; display:block; width:54px; height:54px; }
   .tetris-pause-btn{ border:none; background:var(--card); width:34px; height:34px; border-radius:50%; font-size:14px; box-shadow:0 3px 8px rgba(180,140,190,.14); cursor:pointer; }
@@ -356,6 +381,15 @@
   .tgc-title{ font-family:'Baloo 2'; font-size:16px; font-weight:800; color:var(--ink); margin-bottom:6px; }
   .tgc-score{ font-family:'Baloo 2'; font-size:30px; font-weight:800; color:var(--accent); margin-bottom:16px; }
   .tgc-vs-result{ font-size:13px; font-weight:800; margin-bottom:14px; padding:10px; border-radius:12px; }
+  .rmk-bonus-boxes{ margin-bottom:16px; }
+  .rmk-bonus-title{ font-size:12px; font-weight:800; color:var(--ink); margin-bottom:10px; }
+  .rmk-boxes-row{ display:flex; gap:10px; justify-content:center; }
+  .rmk-box{
+    width:64px; height:64px; border:none; border-radius:14px; background:linear-gradient(145deg,#ffd9c7,#c9b6e4);
+    font-size:26px; cursor:pointer; box-shadow:0 4px 10px rgba(138,63,174,.25); font-family:'Baloo 2'; font-weight:800; color:var(--ink);
+  }
+  .rmk-box:disabled{ opacity:.7; cursor:default; font-size:13px; }
+  .rmk-box.opened{ background:linear-gradient(145deg,#fbbf24,#f59e0b); color:#fff; opacity:1; }
   .tgc-vs-result.win{ background:#eafaf0; color:#22c55e; }
 
   /* ── 루미큐브 ───────────────────────────────────────────── */
@@ -604,6 +638,14 @@
           <div class="tetris-gameover-card">
             <div class="tgc-title" id="rmkGameOverTitle">게임 종료</div>
             <div class="tgc-vs-result" id="rmkVsResult" style="display:block;"></div>
+            <div class="rmk-bonus-boxes" id="rmkBonusBoxes" style="display:none;">
+              <div class="rmk-bonus-title">🎉 보너스 상자를 하나 골라보세요!</div>
+              <div class="rmk-boxes-row">
+                <button class="rmk-box" data-box="0">🎁</button>
+                <button class="rmk-box" data-box="1">🎁</button>
+                <button class="rmk-box" data-box="2">🎁</button>
+              </div>
+            </div>
             <button class="tetris-quit-btn" id="rmkBackBtn">닫기</button>
           </div>
         </div>
@@ -645,6 +687,10 @@
         <div class="tetris-side">
           <div class="tetris-next-label">NEXT</div>
           <canvas id="tetrisNextCanvas" width="54" height="54"></canvas>
+          <div class="tetris-evolve-wrap" id="tetrisEvolveWrap">
+            <div class="tetris-evolve-char" id="tetrisEvolveChar">🐻</div>
+            <div class="tetris-evolve-label" id="tetrisEvolveLabel">기본</div>
+          </div>
           <div id="tetrisSideVersus" style="display:none;">
             <div class="tvh-row1"><span class="tvh-avatar" id="tvhAvatar">🐰</span><span class="tvh-name" id="tvhName">파트너</span></div>
             <span class="tvh-status" id="tvhStatus">생존중</span>
