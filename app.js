@@ -14,7 +14,7 @@
 // 먹통이 돼요.
 let db = null;
 let firebaseReady = false;
-console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix55 (테트리스: 게임종료 딜레이 보험로직 + 공격 중복적용 버그 수정 + 2000점 기준으로 변경)', 'color:#8a3fae;font-weight:bold;');
+console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix56 (공휴일: 연도 상관없이 자동계산 + 일정 메모보기/수정 기능)', 'color:#8a3fae;font-weight:bold;');
 try {
   firebase.initializeApp(firebaseConfig);
   db = firebase.firestore();
@@ -93,28 +93,76 @@ store.loadLocal();
 // 직접 그리는 대신 실제 대한민국 표준 규격 태극기 이미지를 그대로 가져와서 써요.
 const KR_FLAG_SVG = '<img src="https://flagcdn.com/kr.svg" alt="태극기" style="width:1.2em;height:auto;vertical-align:-0.18em;" />';
 
-const HOLIDAYS_KR = {
-  '2026-01-01': { name:'신정', icon:'🎉' },
-  '2026-02-16': { name:'설날 연휴', icon:'🧧' },
-  '2026-02-17': { name:'설날', icon:'🧧' },
-  '2026-02-18': { name:'설날 연휴', icon:'🧧' },
-  '2026-03-01': { name:'삼일절', icon: KR_FLAG_SVG },
-  '2026-03-02': { name:'삼일절 대체공휴일', icon: KR_FLAG_SVG },
-  '2026-05-05': { name:'어린이날', icon:'🎈' },
-  '2026-05-24': { name:'부처님오신날', icon:'🏮' },
-  '2026-05-25': { name:'부처님오신날 대체공휴일', icon:'🏮' },
-  '2026-06-06': { name:'현충일', icon:'🕯️' },
-  '2026-07-17': { name:'제헌절', icon:'📜' },
-  '2026-08-15': { name:'광복절', icon: KR_FLAG_SVG },
-  '2026-08-17': { name:'광복절 대체공휴일', icon: KR_FLAG_SVG },
-  '2026-09-24': { name:'추석 연휴', icon:'🌕' },
-  '2026-09-25': { name:'추석', icon:'🌕' },
-  '2026-09-26': { name:'추석 연휴', icon:'🌕' },
-  '2026-10-03': { name:'개천절', icon: KR_FLAG_SVG },
-  '2026-10-05': { name:'개천절 대체공휴일', icon: KR_FLAG_SVG },
-  '2026-10-09': { name:'한글날', icon: KR_FLAG_SVG },
-  '2026-12-25': { name:'크리스마스', icon:'🎄' },
+// 음력 기반 공휴일(설날/추석/부처님오신날)은 계산으로 못 구해서 연도별로 실제 날짜를
+// 하나하나 넣어둬요. 새 연도가 되면 여기에 그 해 날짜만 추가해주면 돼요.
+const LUNAR_HOLIDAYS_KR = {
+  2026: {
+    '02-16': { name:'설날 연휴', icon:'🧧' },
+    '02-17': { name:'설날', icon:'🧧' },
+    '02-18': { name:'설날 연휴', icon:'🧧' },
+    '05-24': { name:'부처님오신날', icon:'🏮' },
+    '05-25': { name:'부처님오신날 대체공휴일', icon:'🏮' },
+    '09-24': { name:'추석 연휴', icon:'🌕' },
+    '09-25': { name:'추석', icon:'🌕' },
+    '09-26': { name:'추석 연휴', icon:'🌕' },
+  },
+  2027: {
+    '02-06': { name:'설날 연휴', icon:'🧧' },
+    '02-07': { name:'설날', icon:'🧧' },
+    '02-08': { name:'설날 연휴', icon:'🧧' },
+    '02-09': { name:'설날 대체공휴일', icon:'🧧' },
+    '05-13': { name:'부처님오신날', icon:'🏮' },
+    '09-14': { name:'추석 연휴', icon:'🌕' },
+    '09-15': { name:'추석', icon:'🌕' },
+    '09-16': { name:'추석 연휴', icon:'🌕' },
+  },
 };
+
+// 양력 고정 날짜 공휴일은 연도 상관없이 계산으로 구해요. substitute:true면
+// 토/일요일에 걸릴 때 대체공휴일도 자동으로 계산해요 (실제 제도가 적용되는 항목만 true).
+const FIXED_HOLIDAYS = [
+  { md:'01-01', name:'신정',     icon:'🎉',        substitute:false },
+  { md:'03-01', name:'삼일절',   icon:KR_FLAG_SVG, substitute:true  },
+  { md:'05-05', name:'어린이날', icon:'🎈',        substitute:true  },
+  { md:'06-06', name:'현충일',   icon:'🕯️',        substitute:false },
+  { md:'07-17', name:'제헌절',   icon:'📜',        substitute:false },
+  { md:'08-15', name:'광복절',   icon:KR_FLAG_SVG, substitute:true  },
+  { md:'10-03', name:'개천절',   icon:KR_FLAG_SVG, substitute:true  },
+  { md:'10-09', name:'한글날',   icon:KR_FLAG_SVG, substitute:true  },
+  { md:'12-25', name:'크리스마스', icon:'🎄',      substitute:true  },
+];
+
+function pad2(n){ return String(n).padStart(2,'0'); }
+
+const HOLIDAY_YEAR_CACHE = {}; // 연도별로 한번 계산해두고 재사용(매번 다시 계산 안 하게)
+function computeHolidaysForYear(year){
+  if(HOLIDAY_YEAR_CACHE[year]) return HOLIDAY_YEAR_CACHE[year];
+  const result = {};
+  FIXED_HOLIDAYS.forEach(h=>{
+    const [mm, dd] = h.md.split('-').map(Number);
+    const date = new Date(year, mm-1, dd);
+    result[`${year}-${h.md}`] = { name: h.name, icon: h.icon };
+    if(h.substitute){
+      const day = date.getDay(); // 0=일요일, 6=토요일
+      if(day === 0 || day === 6){
+        const sub = new Date(date);
+        do { sub.setDate(sub.getDate()+1); } while(sub.getDay()===0 || sub.getDay()===6);
+        const subKey = `${sub.getFullYear()}-${pad2(sub.getMonth()+1)}-${pad2(sub.getDate())}`;
+        result[subKey] = { name: h.name+' 대체공휴일', icon: h.icon };
+      }
+    }
+  });
+  const lunar = LUNAR_HOLIDAYS_KR[year];
+  if(lunar){
+    Object.keys(lunar).forEach(md=>{ result[`${year}-${md}`] = lunar[md]; });
+  }
+  HOLIDAY_YEAR_CACHE[year] = result;
+  return result;
+}
+function getHoliday(dateStr){
+  const year = Number(dateStr.slice(0,4));
+  return computeHolidaysForYear(year)[dateStr];
+}
 
 const CATS = [
   { key:'date',  label:'데이트', color:'#ff6b9d' },
@@ -210,7 +258,16 @@ function showTab(name){
   // (안전을 위해 "완전 고정"은 안 씀 — 혹시 계산이 틀려서 버튼이 화면 밖으로
   // 나가더라도, 최소한 스크롤해서 손으로 닿을 수 있게 열어둬요.)
 }
-tabBtns.forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
+tabBtns.forEach(b => b.addEventListener('click', () => {
+  if(b.dataset.tab === 'add'){
+    // 하단 탭바로 직접 "등록"에 들어온 거면 항상 신규 등록이라, 혹시 남아있던 수정모드는 풀어줘요
+    // (일정을 눌러서 들어오는 수정 모드는 openEventForEdit이 별도로 처리해요, 이 리스너를 안 거쳐요)
+    if(typeof addEditingId !== 'undefined') addEditingId = null;
+    const saveBtnEl = document.getElementById('saveBtn');
+    if(saveBtnEl) saveBtnEl.textContent = '일정 저장하기';
+  }
+  showTab(b.dataset.tab);
+}));
 
 /* ── 토스트 ────────────────────────────────────────────────── */
 const toastEl = document.getElementById('toast');
@@ -234,14 +291,14 @@ function avatarGroupHTML(who){
 
 function eventRowHTML(ev){
   return `
-    <div class="event-item">
+    <div class="event-item" data-id="${ev.id}" style="cursor:pointer;">
       <div class="icon-stack">
         <div class="icon-chip" style="background:${getEventColor(ev)}">${ev.icon}</div>
         ${avatarGroupHTML(ev.who)}
       </div>
       <div class="etxt">
         <div class="etitle">${ev.title}</div>
-        <div class="emeta">${fmtEventDateRange(ev)} · ${ev.time}</div>
+        <div class="emeta">${fmtEventDateRange(ev)} · ${ev.time}${ev.memo ? ' · 📝' : ''}</div>
       </div>
       <button class="edel" data-id="${ev.id}">✕</button>
     </div>`;
@@ -249,12 +306,19 @@ function eventRowHTML(ev){
 
 function bindDeleteButtons(container){
   container.querySelectorAll('.edel').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
+    btn.addEventListener('click', (e)=>{
+      e.stopPropagation(); // 삭제 버튼 클릭이 아래 "행 클릭(상세보기)"으로 안 번지게
       store.events = store.events.filter(e => e.id !== btn.dataset.id);
       store.save();
       renderHome();
       if(document.getElementById('tab-calendar').classList.contains('active')) renderCalendar();
       toast('일정을 삭제했어요');
+    });
+  });
+  container.querySelectorAll('.event-item[data-id]').forEach(row=>{
+    row.addEventListener('click', ()=>{
+      const ev = store.events.find(e => e.id === row.dataset.id);
+      if(ev) openEventForEdit(ev);
     });
   });
 }
@@ -412,7 +476,7 @@ function renderCalendar(){
     const dateStr = `${calYear}-${pad(calMonth+1)}-${pad(d)}`;
     const c = document.createElement('div');
     const milestones = getMilestonesForDate(dateStr);
-    const isHoliday = !!HOLIDAYS_KR[dateStr];
+    const isHoliday = !!getHoliday(dateStr);
     const isMultiChecked = multiSelectMode && multiSelectedDates.has(dateStr);
     c.className = 'cal-cell' + (dateStr===today?' today':'') + (dateStr===calSelectedDate?' selected':'') + (milestones.length ? ' cal-milestone':'') + (isHoliday ? ' cal-holiday':'') + (isMultiChecked ? ' multi-checked':'');
     const evs = eventsByDate[dateStr] || [];
@@ -438,7 +502,7 @@ function renderCalendar(){
   document.getElementById('calSelLabel').textContent = `${fmtDateLabel(calSelectedDate)} 일정`;
   const selEvents = (eventsByDate[calSelectedDate] || []).sort((a,b)=>a.time.localeCompare(b.time));
   const selMilestones = getMilestonesForDate(calSelectedDate);
-  const holiday = HOLIDAYS_KR[calSelectedDate];
+  const holiday = getHoliday(calSelectedDate);
   const holidayHTML = holiday ? `
     <div class="event-item milestone-item" style="background:#fff0f0 !important;">
       <div class="icon-stack"><div class="icon-chip" style="background:#ffe0e0;">${holiday.icon}</div></div>
@@ -472,6 +536,9 @@ document.getElementById('todayBtn')?.addEventListener('click', ()=>{
 document.getElementById('calAddBtn')?.addEventListener('click', ()=>{
   const targetDate = calSelectedDate;
   showTab('add');
+  addEditingId = null; // "+ 일정 추가"는 언제나 신규 등록이라, 혹시 남아있던 수정모드는 풀어줘요
+  const saveBtnEl = document.getElementById('saveBtn');
+  if(saveBtnEl) saveBtnEl.textContent = '일정 저장하기';
   // 혹시 기간 모드가 켜져 있었으면 단일 날짜 모드로 되돌리고 그 날짜를 채워넣어요
   periodMode = false;
   document.getElementById('periodSwitch')?.classList.remove('on');
@@ -527,9 +594,60 @@ document.getElementById('multiAddBtn')?.addEventListener('click', ()=>{
 /* ── 일정 등록 탭 ──────────────────────────────────────────── */
 let addState = { icon: ICONS[0], cat: CATS[0], selectedWho: [] };
 let addMultiDates = null; // 캘린더에서 "여러 날짜 선택"으로 넘어왔을 때만 배열로 채워짐
+let addEditingId = null; // 기존 일정을 "수정" 중일 때만 그 일정의 id가 들어감
+
+// 홈/캘린더에서 일정을 탭했을 때, 등록 화면을 "수정 모드"로 열어요.
+function openEventForEdit(ev){
+  showTab('add');
+  addEditingId = ev.id;
+  addMultiDates = null;
+  document.getElementById('multiDatesInfo').style.display = 'none';
+
+  addState.icon = ev.icon;
+  addState.cat = CATS.find(c => c.key === ev.catKey) || CATS[0];
+  addState.selectedWho = [...(ev.who || [])];
+
+  document.getElementById('titleInput').value = ev.title;
+  document.getElementById('memoInput').value = ev.memo || '';
+
+  const isPeriod = !!(ev.endDate && ev.endDate !== ev.date);
+  periodMode = isPeriod;
+  periodSwitch?.classList.toggle('on', isPeriod);
+  document.getElementById('singleDateRow').style.display = isPeriod ? 'none' : 'flex';
+  document.getElementById('periodDateRow').style.display = isPeriod ? 'flex' : 'none';
+  if(isPeriod){
+    document.getElementById('startDateInput').value = ev.date;
+    document.getElementById('endDateInput').value = ev.endDate;
+  } else {
+    document.getElementById('dateInput').value = ev.date;
+  }
+  document.getElementById('timeInput').value = ev.time || '19:00';
+
+  applyAddStateToUI();
+  buildWhoRow();
+  const saveBtn = document.getElementById('saveBtn');
+  saveBtn.textContent = '수정 완료';
+  saveBtn.classList.add('ready');
+  const workHint = document.getElementById('workHint');
+  if(workHint) workHint.style.display = (addState.cat.key === 'work') ? 'block' : 'none';
+}
+
+// 아이콘/카테고리 선택 버튼들의 "active" 표시를 addState 값에 맞게 다시 그려줘요 (수정 모드 진입 시 필요)
+function applyAddStateToUI(){
+  document.querySelectorAll('#iconPicker .icon-opt').forEach(b=>{
+    b.classList.toggle('active', b.textContent === addState.icon);
+  });
+  document.querySelectorAll('#catRow .cat-chip').forEach(el=>{
+    const label = el.querySelector('span')?.textContent;
+    const cat = CATS.find(c => c.label === label);
+    el.classList.toggle('active', cat && cat.key === addState.cat.key);
+  });
+}
 
 function setMultiDatesMode(dates){
   addMultiDates = dates;
+  addEditingId = null; // 여러 날짜 등록도 항상 신규 등록
+  document.getElementById('saveBtn').textContent = '일정 저장하기';
   document.getElementById('singleDateRow').style.display = 'none';
   document.getElementById('periodDateRow').style.display = 'none';
   document.getElementById('multiDatesInfo').style.display = 'block';
@@ -592,12 +710,6 @@ function buildWhoRow(){
   // 선택 상태가 꼬여요. 그래서 매번 "지금 존재하는 멤버"만 남기고 정리해요.
   addState.selectedWho = addState.selectedWho.filter(id => memberIds.includes(id));
 
-  console.log('[buildWhoRow]', {
-    members: members.map(m=>({id:m.id, name:m.name})),
-    myRoomInfo: store.getRoomInfo(),
-    selectedWhoBeforeDefault: [...addState.selectedWho],
-  });
-
   if(members.length <= 1){
     whoSection.style.display = 'none';
     addState.selectedWho = [members[0].id];
@@ -610,7 +722,6 @@ function buildWhoRow(){
     const myId = roomInfo ? roomInfo.myId : members[0].id;
     addState.selectedWho = memberIds.includes(myId) ? [myId] : [members[0].id];
   }
-  console.log('[buildWhoRow] selectedWhoAfterDefault:', [...addState.selectedWho]);
   whoRow.innerHTML = '';
   members.forEach(m=>{
     const chip = document.createElement('div');
@@ -673,6 +784,55 @@ titleInput.addEventListener('input', ()=>{
 saveBtn.addEventListener('click', async ()=>{
   const title = titleInput.value.trim();
   if(!title) return;
+
+  if(addEditingId){
+    // 수정 모드: 새로 만들지 않고 기존 일정 자리를 그대로 갱신해요
+    const idx = store.events.findIndex(e => e.id === addEditingId);
+    if(idx === -1){ toast('수정할 일정을 찾지 못했어요'); addEditingId = null; return; }
+
+    let date, endDate;
+    if(periodMode){
+      date = document.getElementById('startDateInput')?.value || todayStr();
+      endDate = document.getElementById('endDateInput')?.value || date;
+      if(endDate < date){ toast('종료일이 시작일보다 빠를 수 없어요'); return; }
+    } else {
+      date = document.getElementById('dateInput').value || todayStr();
+      endDate = date;
+    }
+
+    const updated = {
+      ...store.events[idx],
+      title,
+      icon: addState.icon,
+      catKey: addState.cat.key,
+      catColor: addState.cat.color,
+      who: [...addState.selectedWho],
+      date,
+      time: document.getElementById('timeInput').value || '00:00',
+      memo: document.getElementById('memoInput').value.trim(),
+    };
+    if(endDate !== date) updated.endDate = endDate; else delete updated.endDate;
+    store.events[idx] = updated;
+    await store.save();
+
+    addEditingId = null;
+    periodMode = false;
+    periodSwitch.classList.remove('on');
+    singleDateRow.style.display = 'flex';
+    periodDateRow.style.display = 'none';
+    saveBtn.textContent = '일정 저장하기';
+
+    titleInput.value = '';
+    document.getElementById('memoInput').value = '';
+    saveBtn.classList.remove('ready');
+    addState.selectedWho = [];
+    buildWhoRow();
+
+    toast('일정을 수정했어요 ✏️');
+    renderHome();
+    showTab('calendar');
+    return;
+  }
 
   if(addMultiDates && addMultiDates.length){
     // 여러 날짜 선택 모드: 같은 내용으로 각 날짜마다 별도 일정을 하나씩 만들어요
