@@ -377,6 +377,19 @@
   .tctrl-wide{ width:100%; height:44px; font-size:13px; font-weight:800; margin-top:2px; }
 
   .tetris-gameover{ position:fixed; inset:0; background:rgba(43,31,61,.75); display:flex; align-items:center; justify-content:center; z-index:60; padding:20px; }
+
+  /* ── 일정 상세(메모) 팝업 ──────────────────────────────────── */
+  .event-detail-overlay{ position:fixed; inset:0; background:rgba(43,31,61,.55); display:flex; align-items:center; justify-content:center; z-index:70; padding:20px; }
+  .event-detail-card{ background:var(--bg); border-radius:20px; padding:22px; width:100%; max-width:320px; }
+  .edc-header{ display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+  .edc-icon{ width:38px; height:38px; border-radius:50%; background:var(--card); display:flex; align-items:center; justify-content:center; font-size:18px; box-shadow:0 3px 8px rgba(180,140,190,.14); flex-shrink:0; }
+  .edc-title{ font-family:'Baloo 2'; font-size:16px; font-weight:700; color:var(--ink); }
+  .edc-meta{ font-size:11.5px; color:var(--sub); font-weight:700; margin-bottom:10px; padding-left:2px; }
+  .edc-who{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px; }
+  .edc-who-chip{ background:var(--card); font-size:10.5px; font-weight:700; padding:5px 10px; border-radius:999px; box-shadow:0 2px 6px rgba(180,140,190,.1); }
+  .edc-memo-label{ font-size:10.5px; font-weight:800; color:var(--sub); margin-bottom:6px; padding-left:2px; }
+  .edc-memo{ background:var(--card); border-radius:12px; padding:12px; font-size:12.5px; color:var(--ink); line-height:1.6; margin-bottom:18px; white-space:pre-wrap; word-break:break-word; box-shadow:0 3px 8px rgba(180,140,190,.1); min-height:20px; }
+  .edc-actions{ display:flex; flex-direction:column; align-items:center; gap:4px; }
   .tetris-gameover-card{ background:var(--bg); border-radius:20px; padding:24px; text-align:center; width:100%; max-width:280px; }
   .tgc-title{ font-family:'Baloo 2'; font-size:16px; font-weight:800; color:var(--ink); margin-bottom:6px; }
   .tgc-score{ font-family:'Baloo 2'; font-size:30px; font-weight:800; color:var(--accent); margin-bottom:16px; }
@@ -854,6 +867,24 @@
   </div>
 
   <div class="toast" id="toast"></div>
+
+  <!-- 일정 탭하면 뜨는 간단한 메모/상세 팝업 -->
+  <div class="event-detail-overlay" id="eventDetailOverlay" style="display:none;">
+    <div class="event-detail-card">
+      <div class="edc-header">
+        <div class="edc-icon" id="edcIcon">☕</div>
+        <div class="edc-title" id="edcTitle">제목</div>
+      </div>
+      <div class="edc-meta" id="edcMeta">날짜 · 시간</div>
+      <div class="edc-who" id="edcWho"></div>
+      <div class="edc-memo-label">메모</div>
+      <div class="edc-memo" id="edcMemo">메모가 없어요</div>
+      <div class="edc-actions">
+        <button class="save-btn ready" id="edcEditBtn">✏️ 일정 편집</button>
+        <button class="tetris-quit-btn" id="edcCloseBtn">닫기</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- Firebase SDK (compat 버전 - 초보자도 쉽게 쓸 수 있는 방식) -->

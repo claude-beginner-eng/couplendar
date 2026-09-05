@@ -14,7 +14,7 @@
 // 먹통이 돼요.
 let db = null;
 let firebaseReady = false;
-console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix56 (공휴일: 연도 상관없이 자동계산 + 일정 메모보기/수정 기능)', 'color:#8a3fae;font-weight:bold;');
+console.log('%c우리 캘린더 app.js 로드됨 — 버전: 2026-08-26-fix57 (일정 클릭 시 메모 팝업 먼저, 그 안에서 편집 버튼)', 'color:#8a3fae;font-weight:bold;');
 try {
   firebase.initializeApp(firebaseConfig);
   db = firebase.firestore();
@@ -318,7 +318,7 @@ function bindDeleteButtons(container){
   container.querySelectorAll('.event-item[data-id]').forEach(row=>{
     row.addEventListener('click', ()=>{
       const ev = store.events.find(e => e.id === row.dataset.id);
-      if(ev) openEventForEdit(ev);
+      if(ev) openEventDetail(ev);
     });
   });
 }
@@ -597,6 +597,32 @@ let addMultiDates = null; // 캘린더에서 "여러 날짜 선택"으로 넘어
 let addEditingId = null; // 기존 일정을 "수정" 중일 때만 그 일정의 id가 들어감
 
 // 홈/캘린더에서 일정을 탭했을 때, 등록 화면을 "수정 모드"로 열어요.
+// 일정을 탭하면 먼저 이 간단한 상세(메모) 팝업을 보여줘요. 편집은 그 팝업 안의
+// "일정 편집" 버튼을 눌러야 열려요 (탭 한 번에 바로 편집화면으로 안 가게).
+let eventDetailCurrentId = null;
+function openEventDetail(ev){
+  eventDetailCurrentId = ev.id;
+  document.getElementById('edcIcon').textContent = ev.icon;
+  document.getElementById('edcTitle').textContent = ev.title;
+  document.getElementById('edcMeta').textContent = `${fmtEventDateRange(ev)} · ${ev.time}`;
+  const members = getMemberList();
+  const whoHTML = (ev.who || []).map(id=>{
+    const m = members.find(mm => mm.id === id);
+    return m ? `<span class="edc-who-chip">${m.avatar} ${m.name}</span>` : '';
+  }).join('');
+  document.getElementById('edcWho').innerHTML = whoHTML;
+  document.getElementById('edcMemo').textContent = ev.memo ? ev.memo : '메모가 없어요';
+  document.getElementById('eventDetailOverlay').style.display = 'flex';
+}
+document.getElementById('edcEditBtn')?.addEventListener('click', ()=>{
+  const ev = store.events.find(e => e.id === eventDetailCurrentId);
+  document.getElementById('eventDetailOverlay').style.display = 'none';
+  if(ev) openEventForEdit(ev);
+});
+document.getElementById('edcCloseBtn')?.addEventListener('click', ()=>{
+  document.getElementById('eventDetailOverlay').style.display = 'none';
+});
+
 function openEventForEdit(ev){
   showTab('add');
   addEditingId = ev.id;
